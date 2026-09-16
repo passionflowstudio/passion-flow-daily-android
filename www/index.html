@@ -1795,6 +1795,42 @@ var DETAIL_STEPS={
   ]
 };
 
+// Android only: keep "Why" and "How to do it" consistent with the idea's time tag.
+function pfdIsAndroidUi(){
+  try{return document.documentElement.classList.contains('pfd-android');}catch(e){return false;}
+}
+var DETAIL_SHORT_ONLY=/five minutes|few minutes|short burst|keep it small|right now/i;
+var DETAIL_NOT_BIG=/\bsmall\b|do not have to do a lot|simplest/i;
+var DETAIL_LONG_ONLY=/longer than feels comfortable/i;
+var DETAIL_WHY_LONG=[
+  'Big, unhurried experiences give you a reset and memories that a regular day rarely can.',
+  'Giving something real time is how it stops being a task and becomes an experience.',
+  'Setting aside a longer stretch for this tells yourself it matters, because it does.',
+  'The best days are usually the ones you planned a little and then fully showed up for.'
+];
+var DETAIL_STEPS_LONG=[
+  ['Pick a day and block it on your calendar now.','Plan the basics ahead: time, place and what to bring.','Leave room to wander. The unplanned parts are often the best.'],
+  ['Decide who, if anyone, you want with you and invite them early.','Sort out travel and timing the day before so the day feels easy.','Put your phone away for stretches and take it all in.'],
+  ['Choose the version of this that excites you most.','Pack or prep anything you need the night before.','Take a moment at the end to notice how you feel.'],
+  ['Set aside the full time so nothing cuts it short.','Keep the plan simple and leave space for rest in between.','Capture one moment you want to remember.']
+];
+function pickDetailVariant(list,hi,tm,longList){
+  if(!pfdIsAndroidUi())return list[hi];
+  var isShort=tm==='15m';
+  var isLong=tm==='1h'||tm==='2h+';
+  var isBig=tm==='2h+';
+  function ok(v){
+    var t=Array.isArray(v)?v.join(' '):String(v);
+    if(isLong&&DETAIL_SHORT_ONLY.test(t))return false;
+    if(isBig&&DETAIL_NOT_BIG.test(t))return false;
+    if(isShort&&DETAIL_LONG_ONLY.test(t))return false;
+    return true;
+  }
+  if(isBig&&longList)return longList[hi%longList.length];
+  for(var k=0;k<list.length;k++){var v=list[(hi+k)%list.length];if(ok(v))return v;}
+  return (isLong&&longList)?longList[hi%longList.length]:list[hi];
+}
+
 function IdeaDetailSheet(p){
   var idea=p.idea;
   var card=p.card;
@@ -1806,8 +1842,8 @@ function IdeaDetailSheet(p){
   var tmLabel=tm==='15m'?'15 min':tm==='30m'?'30 min':tm==='1h'?'1 hr':'2+ hrs';
   var perfectFor=ideaPerfectFor(idea.text);
   var hi=hashN(idea.text,4);
-  var why=(DETAIL_WHY[vb]||DETAIL_WHY.Easy)[hi];
-  var steps=(DETAIL_STEPS[vb]||DETAIL_STEPS.Easy)[hi];
+  var why=pickDetailVariant(DETAIL_WHY[vb]||DETAIL_WHY.Easy,hi,tm,DETAIL_WHY_LONG);
+  var steps=pickDetailVariant(DETAIL_STEPS[vb]||DETAIL_STEPS.Easy,hi,tm,DETAIL_STEPS_LONG);
   var SUBS=['A moment worth choosing today.','Small but meaningful.','This one is worth it.','Exactly what you need right now.'];
   var sub=SUBS[hashN(idea.text,SUBS.length)];
   var sheet=<div className="fixed inset-0 z-[100] flex items-end justify-center" style={{background:'rgba(0,0,0,0.3)'}} onClick={function(e){if(e.target===e.currentTarget)p.onClose();}}>
@@ -1880,6 +1916,15 @@ function MobileCardPanel(p){
   var _seed=useState(0),shuffleSeed=_seed[0],setShuffleSeed=_seed[1];
   var _time=useState('All'),timeFilter=_time[0],setTimeFilter=_time[1];
   var _detail=useState(null),detailIdea=_detail[0],setDetailIdea=_detail[1];
+
+  // Android only: let the hardware back button step back inside the card first.
+  if(window.Capacitor&&window.Capacitor.getPlatform&&window.Capacitor.getPlatform()==='android'){
+    window.pfdCardBack=function(){
+      if(detailIdea){setDetailIdea(null);return true;}
+      if(selectedPack){setSelectedPack(null);return true;}
+      return false;
+    };
+  }
 
   var packs=FOCUS_PACKS[card.id]||[];
   var selected=p.selectedIdeas||[];
@@ -2425,6 +2470,30 @@ function App(){
   }
   function openManageSubscription(){
     window.open(manageSubscriptionUrl(),'_blank');
+  }
+  // Android only: Restore purchases from Settings. Shows a clear result instead of a false "restored".
+  function restorePurchasesFromSettings(){
+    if(!isAndroidApp)return;
+    setRestoreNote('');setPurchaseError('');setRestoreState('loading');setShowRestore(true);
+    if(!window.RCPurchases){
+      setTimeout(function(){setRestoreState('success');setRestoreNote('Purchases are not available in this build. Please update the app and try again.');},300);
+      return;
+    }
+    var ensure=(currentUser&&currentUser.uid)?rcLogin(currentUser.uid):configureRevenueCat();
+    Promise.resolve(ensure).then(function(){
+      return window.RCPurchases.Purchases.restorePurchases();
+    }).then(function(result){
+      if(rcHasPro(result)){
+        if(isPro){setRestoreState('success');return;}
+        return Promise.resolve(grantProAccess()).then(function(){setRestoreState('success');});
+      }
+      setRestoreState('success');
+      setRestoreNote('No active subscription was found for this Google Play account. Make sure the Play Store is signed in to the Google account you subscribed with.');
+    }).catch(function(e){
+      logRcError('restore',e);
+      setRestoreState('success');
+      setRestoreNote(userFacingPurchaseError(e)||'Restore failed. Please check your connection and try again.');
+    });
   }
   var _rcStoreLoad=useState(false),rcStoreLoading=_rcStoreLoad[0],setRcStoreLoading=_rcStoreLoad[1];
   var _rcStoreReady=useState(false),rcStoreReady=_rcStoreReady[0],setRcStoreReady=_rcStoreReady[1];
@@ -4624,7 +4693,9 @@ function App(){
   },[]);
 
   function handleDeleteAccount(){
-    if(!window.confirm('Delete your account? All your journal entries and data will be permanently removed. This cannot be undone.'))return;
+    var deleteMsg='Delete your account? All your journal entries and data will be permanently removed. This cannot be undone.';
+    if(isAndroidApp&&isPro)deleteMsg+='\n\nThis does not cancel your subscription. Cancel it in Google Play so you are not charged again.';
+    if(!window.confirm(deleteMsg))return;
     var user=firebase.auth().currentUser;
     if(!user)return;
     var uid=user.uid;
@@ -4634,6 +4705,11 @@ function App(){
       try{localStorage.removeItem('pfd_backup_'+uid);clearDevPro(uid);}catch(e){}
       return user.delete();
     }).then(function(){
+      if(isAndroidApp){
+        // Android only: clear the saved Google sign-in and the RevenueCat user for this device.
+        clearAndroidGoogleAuthState();
+        try{if(window.RCPurchases)window.RCPurchases.Purchases.logOut().catch(function(){});}catch(e){}
+      }
       setCurrentUser(null);setUserLoaded(false);resetUserData();setUserName('');
       setShowAuth(false);setShowOnboard(false);
       setShowOnboard(true);
@@ -4718,7 +4794,21 @@ function App(){
     });
   }
 
+  function pfdImagePlugin(){
+    return isAndroidApp&&window.Capacitor&&window.Capacitor.Plugins&&window.Capacitor.Plugins.PfdImage;
+  }
   function saveImageToPhotosNative(canvas){
+    if(pfdImagePlugin()){
+      // Android only: save straight to Photos (Pictures/Passion Flow Daily).
+      return Promise.resolve(pfdImagePlugin().saveImage({base64:canvas.toDataURL('image/png'),fileName:'my-flow-day.png'})).catch(function(e){
+        var code=String((e&&(e.code||e.message))||'');
+        if(/UNSUPPORTED/.test(code)){
+          // Older Android: hand the image to the share sheet so it can still be saved.
+          return pfdImagePlugin().share({base64:canvas.toDataURL('image/png'),fileName:'my-flow-day.png',title:'Save your day'}).then(function(){throw new Error('SHARED_INSTEAD');});
+        }
+        throw new Error('SAVE_FAILED');
+      });
+    }
     return new Promise(function(resolve,reject){
       if(!(isNativeApp&&window.webkit&&window.webkit.messageHandlers&&window.webkit.messageHandlers.saveImageToPhotos)){
         reject(new Error('NOT_NATIVE'));
@@ -4900,7 +4990,7 @@ function App(){
       var flowEmoji=log.flow<=3?'\uD83D\uDCA8':log.flow<=7?'\uD83C\uDFAF':'\uD83D\uDE80';
       ctx.font='11px Inter, sans-serif';
       ctx.fillStyle='rgba(97,68,51,0.5)';
-      var flowText='flow: '+log.flow+'/10 '+flowEmoji;
+      var flowText=(isAndroidApp&&log.flow==null)?'':'flow: '+log.flow+'/10 '+flowEmoji;
       ctx.fillText(flowText,PAD,y);
       if(log.balance){
         var bal=log.balance==='yes'?'\u2728 balanced':log.balance==='getting-there'?'\uD83D\uDE0C getting there':'\uD83D\uDE15 not quite';
@@ -4967,6 +5057,7 @@ function App(){
           setTimeout(function(){setPhotoSaveMsg('');},2600);
           return;
         }
+        if(err&&err.message==='SHARED_INSTEAD'){return;}
         if(err&&err.message==='PERMISSION_DENIED'){
           setPhotoSaveMsg('Photos access denied — enable in Settings → Passion Flow Daily → Photos');
         }else{
@@ -4989,6 +5080,17 @@ function App(){
       setShareLog(null);
       if(navigator.share){navigator.share({title:'My day on Passion Flow Daily',text:text}).catch(function(){});}
       else{navigator.clipboard&&navigator.clipboard.writeText(text).then(function(){window.alert('Copied to clipboard!');});}
+    }
+    if(pfdImagePlugin()){
+      // Android only: open the system share sheet with the day card image.
+      renderShareCardCanvas(log,3).then(function(canvas){
+        setShareLog(null);
+        return pfdImagePlugin().share({base64:canvas.toDataURL('image/png'),fileName:'my-flow-day.png',text:text,title:'Share your day'});
+      }).catch(function(){
+        setShareLog(null);
+        return pfdImagePlugin().share({text:text,title:'Share your day'}).catch(function(){});
+      });
+      return;
     }
     // Capture first, then dismiss modal and share
     if(navigator.share&&navigator.canShare){
@@ -5335,6 +5437,26 @@ function App(){
     try{localStorage.removeItem('pfd_onboarded');}catch(e){}
   }
 
+  // Android only: handle the hardware back button (called from MainActivity).
+  // Returns true when the app handled it, false to let Android leave the app.
+  if(isAndroidApp){
+    window.pfdHandleBack=function(){
+      if(showPrivacy){setShowPrivacy(false);return true;}
+      if(showTerms){setShowTerms(false);return true;}
+      if(showRestore&&restoreState!=='loading'){setShowRestore(false);return true;}
+      if(showCloseConfirm){setShowCloseConfirm(false);return true;}
+      if(shareLog){setShareLog(null);return true;}
+      if(showReviewPrompt){setShowReviewPrompt(false);return true;}
+      if(planMyDayResult){closePlanMyDaySheet();return true;}
+      if(pickForMeResult){setPickForMeResult(null);return true;}
+      if(openCard){if(window.pfdCardBack&&window.pfdCardBack())return true;setOpenCard(null);return true;}
+      if(showPersonalizationPayoff){dismissPersonalizationPayoff();return true;}
+      if(showAuth){handleAuthBack();return true;}
+      if(currentUser&&!showOnboard&&!showPaywall&&!showDeepPersonalization&&mobileTab!=='flow'){switchMobileTab('flow',false);return true;}
+      return false;
+    };
+  }
+
   // Opens auth from landing page and pushes a history entry so browser back works
   function openAuthFromLanding(mode){
     authFromLandingRef.current=true;
@@ -5372,6 +5494,11 @@ function App(){
     });
     var text=lines.join('\n');
     var blob=new Blob([text],{type:'text/plain;charset=utf-8'});
+    if(pfdImagePlugin()){
+      // Android only: share the journal text through the system share sheet.
+      pfdImagePlugin().share({text:text,title:'Passion Flow Daily — My Journal'}).catch(function(){});
+      return;
+    }
     if(isNativeApp&&navigator.share){
       var file=new File([blob],'passion-flow-journal.txt',{type:'text/plain'});
       navigator.share({title:'Passion Flow Daily — My Journal',files:[file]}).catch(function(){
@@ -5408,6 +5535,11 @@ function App(){
     });
   }
   function finishLogout(){
+    if(isAndroidApp){
+      // Android only: stop RevenueCat from staying on the previous user.
+      try{if(window.RCPurchases)window.RCPurchases.Purchases.logOut().catch(function(){});}catch(e){}
+      setIsPro(false);
+    }
     existingAccountRef.current=false;
     lastAuthUidRef.current=null;
     setCurrentUser(null);
@@ -5426,6 +5558,7 @@ function App(){
   var _showPrivacy=useState(false),showPrivacy=_showPrivacy[0],setShowPrivacy=_showPrivacy[1];
   var _showRestore=useState(false),showRestore=_showRestore[0],setShowRestore=_showRestore[1];
   var _restoreState=useState('loading'),restoreState=_restoreState[0],setRestoreState=_restoreState[1];
+  var _restoreNote=useState(''),restoreNote=_restoreNote[0],setRestoreNote=_restoreNote[1];
   var _demoStep=useState(0),demoStep=_demoStep[0],setDemoStep=_demoStep[1];
 
   // Start demo animation when reaching step 8
@@ -5625,9 +5758,19 @@ function App(){
     return ios?'iOS '+ios[1].replace(/_/g,'.'):'OS version unknown';
   }
 
+  // Android only: the RevenueCat plugin puts the cancel flag in e.data, and uses code "1" for a cancelled purchase.
+  function rcUserCancelled(e){
+    if(!e)return false;
+    if(e.userCancelled)return true;
+    if(!isAndroidApp)return false;
+    var d=e.data||{};
+    if(d.userCancelled)return true;
+    if(String(e.code)==='1'||d.readableErrorCode==='PURCHASE_CANCELLED'||d.readable_error_code==='PURCHASE_CANCELLED')return true;
+    return false;
+  }
   function formatRcError(e){
     if(!e)return 'Unknown purchase error';
-    if(e.userCancelled)return null;
+    if(rcUserCancelled(e))return null;
     var parts=[];
     if(e.code)parts.push(String(e.code));
     if(e.readableErrorCode&&e.readableErrorCode!==e.code)parts.push(String(e.readableErrorCode));
@@ -5637,9 +5780,20 @@ function App(){
     return parts.length?parts.join(' · '):String(e);
   }
 
+  // Android only: Google blocks a new purchase when this Google account already has a
+  // subscription for the app (for example one on hold after a payment problem).
+  function rcExistingSubscriptionProblem(e){
+    if(!isAndroidApp||!e)return false;
+    var d=e.data||{};
+    var txt=[e.message,e.errorMessage,d.underlyingErrorMessage,d.readableErrorCode,d.readable_error_code].join(' ');
+    return /Account identifiers don't match|ALREADY_OWNED|already own|ProductAlreadyPurchased|PRODUCT_ALREADY_PURCHASED|unable to change your subscription/i.test(txt)||String(e.code)==='6';
+  }
   function userFacingPurchaseError(e){
     if(!e)return 'Something went wrong. Please try again.';
-    if(e.userCancelled)return null;
+    if(rcUserCancelled(e))return null;
+    if(rcExistingSubscriptionProblem(e)){
+      return 'This Google account already has a Passion Flow Daily subscription that needs attention. Tap Restore purchases, or manage it in Google Play.';
+    }
     var msg=String(e.message||e.errorMessage||'');
     if(/not loaded|products missing|StoreKit products|Google Play products|Play Billing products/i.test(msg)){
       if(isAndroidApp)return 'Google Play didn\'t respond, so nothing was charged. Tap Try again in a moment.';
@@ -5846,8 +6000,10 @@ function App(){
     }).then(function(res){
       if(res===false)return false;
       parseRcProducts(res).forEach(function(p){
-        if(p.identifier===RC_PRODUCT_IDS.monthly)rcProductsCacheRef.current.products.monthly=p;
-        if(p.identifier===RC_PRODUCT_IDS.yearly)rcProductsCacheRef.current.products.yearly=p;
+        var pid=String(p.identifier||'');
+        if(isAndroidApp)pid=pid.split(':')[0];
+        if(pid===RC_PRODUCT_IDS.monthly)rcProductsCacheRef.current.products.monthly=p;
+        if(pid===RC_PRODUCT_IDS.yearly)rcProductsCacheRef.current.products.yearly=p;
       });
       var c=rcProductsCacheRef.current;
       var yearlyItem=c.packages.yearly||c.products.yearly;
@@ -5950,7 +6106,7 @@ function App(){
         setPurchaseLoading(false);
       }).catch(function(e){
         setPurchaseLoading(false);
-        if(e&&e.userCancelled)return;
+        if(rcUserCancelled(e))return;
         var msg=userFacingPurchaseError(e)||'Something went wrong. Please try again.';
         logRcError('purchase',e);
         setPurchaseError(msg);
@@ -6325,6 +6481,8 @@ function App(){
   };
   var renderMobile=function(){
     return <div className="lg:hidden min-h-screen pb-36" style={{background:'#FAF6F2'}}>
+      {/* Android only: solid strip behind the status bar so scrolled content doesn't show under the clock */}
+      {isAndroidApp&&<div aria-hidden="true" style={{position:'fixed',top:0,left:0,right:0,height:'env(safe-area-inset-top, 0px)',background:'#FAF6F2',zIndex:45,pointerEvents:'none'}}/>}
       {/* Header */}
       <div className="px-5 pb-2" style={{paddingTop:'calc(env(safe-area-inset-top) + 1.25rem)'}}>
         <p className="font-sans text-[10px] font-medium text-body opacity-40 tracking-[0.15em] uppercase mb-2">{dateStr}</p>
@@ -6618,7 +6776,7 @@ function App(){
         <div className="sc mb-5">
           <p className="font-sans text-[10px] text-body opacity-40 mb-4 text-center">How balanced is your week?</p>
           <BalanceWheel sessions={sessions}/>
-          {CARDS.some(function(c){return !sessions[c.id];})&&<p className="font-sans text-[10px] text-body opacity-35 text-center mt-3 italic">Explore an area you have not tried yet</p>}
+          {!(isAndroidApp&&CARDS.some(function(c){return sessions[c.id];}))&&CARDS.some(function(c){return !sessions[c.id];})&&<p className="font-sans text-[10px] text-body opacity-35 text-center mt-3 italic">Explore an area you have not tried yet</p>}
         </div>
         {renderSplitTitle('Your ', 'sessions')}
         <div className="sc mb-5">
@@ -6697,6 +6855,10 @@ function App(){
             <span className="font-sans text-[12px] text-headline">Manage Subscription</span>
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#C49A7A" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 8h10"/><path d="M8 3l5 5-5 5"/></svg>
           </button>
+          {isAndroidApp&&<button onClick={restorePurchasesFromSettings} className="w-full flex items-center justify-between px-3 py-2.5 rounded-[10px] bg-cream mb-2 transition-all active:scale-[0.98]">
+            <span className="font-sans text-[12px] text-headline">Restore Purchases</span>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#C49A7A" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2.5 8a5.5 5.5 0 109.7-3.5"/><path d="M12.5 1.5v3h-3"/></svg>
+          </button>}
           {renderLeaveReviewButton(true)}
           <button onClick={handleLogout} disabled={logoutBusy} className="w-full flex items-center justify-between px-3 py-2.5 rounded-[10px] bg-cream mb-2 transition-all active:scale-[0.98]" style={{opacity:logoutBusy?0.55:1}}>
             <span className="font-sans text-[12px] text-headline">{logoutBusy?'Logging out…':'Log out'}</span>
@@ -7131,6 +7293,10 @@ function App(){
                     <span className="font-sans text-[13px] text-headline">Manage Subscription</span>
                     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#C49A7A" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 8h10"/><path d="M8 3l5 5-5 5"/></svg>
                   </button>
+                  {isAndroidApp&&<button onClick={restorePurchasesFromSettings} className="w-full flex items-center justify-between px-3 py-2.5 rounded-[10px] bg-cream mb-2 transition-all hover:bg-accent/5 active:scale-[0.98]">
+                    <span className="font-sans text-[13px] text-headline">Restore Purchases</span>
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#C49A7A" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2.5 8a5.5 5.5 0 109.7-3.5"/><path d="M12.5 1.5v3h-3"/></svg>
+                  </button>}
                   {renderLeaveReviewButton(false)}
                   <button onClick={handleLogout} disabled={logoutBusy} className="w-full flex items-center justify-between px-3 py-2.5 rounded-[10px] bg-cream mb-2 transition-all hover:bg-accent/5 active:scale-[0.98]" style={{opacity:logoutBusy?0.55:1}}>
                     <span className="font-sans text-[13px] text-headline">{logoutBusy?'Logging out…':'Log out'}</span>
@@ -8484,15 +8650,15 @@ function App(){
             {/* Yearly — PRIMARY */}
             <button onClick={function(){setPricePlan('yearly');}} className="w-full py-3.5 rounded-[20px] border-2 transition-all relative" style={{background:'white',borderColor:pricePlan==='yearly'?'#C49A7A':'rgba(0,0,0,0.08)',boxShadow:pricePlan==='yearly'?'0 0 24px rgba(196,154,122,0.25), 0 4px 12px rgba(196,154,122,0.08)':'none'}}>
               <span className="absolute -top-3 left-1/2 -translate-x-1/2 font-sans text-[9px] font-bold text-white px-3.5 py-1 rounded-full tracking-[0.05em] uppercase" style={{background:'#C49A7A',boxShadow:'0 2px 8px rgba(196,154,122,0.4)'}}>Best Value</span>
-              <p className="font-sans text-[17px] md:text-[20px] text-headline font-bold">{showTrialCopy('yearly')?'3 days free':(rcPrices.yearlyRaw||'$29.99/year')}</p>
-              <p className="font-sans text-[12.5px] md:text-[14px] text-headline font-semibold mt-0.5">{showTrialCopy('yearly')?(rcPrices.yearly||'Then $29.99/year'):'Billed yearly'}</p>
+              <p className="font-sans text-[17px] md:text-[20px] text-headline font-bold">{showTrialCopy('yearly')?'3 days free':(rcPrices.yearlyRaw||(isAndroidApp?'Yearly':'$29.99/year'))}</p>
+              <p className="font-sans text-[12.5px] md:text-[14px] text-headline font-semibold mt-0.5">{showTrialCopy('yearly')?(rcPrices.yearly||(isAndroidApp?'':'Then $29.99/year')):'Billed yearly'}</p>
               {isAndroidApp?(rcPrices.yearlyPerMonth&&<p className="font-sans text-[10.5px] md:text-[12px] text-body opacity-45 mt-0.5">{'Just '+rcPrices.yearlyPerMonth+'/month'}</p>):<p className="font-sans text-[10.5px] md:text-[12px] text-body opacity-45 mt-0.5">Just $2.50/month</p>}
             </button>
 
             {/* Monthly — SECONDARY */}
             <button onClick={function(){setPricePlan('monthly');}} className="w-full py-2.5 rounded-[16px] border-2 transition-all" style={{background:'white',borderColor:pricePlan==='monthly'?'#C49A7A':'rgba(0,0,0,0.08)',boxShadow:pricePlan==='monthly'?'0 0 24px rgba(196,154,122,0.25), 0 4px 12px rgba(196,154,122,0.08)':'none'}}>
-              <p className="font-sans text-[13px] text-headline font-bold">{showTrialCopy('monthly')?'3 days free':(rcPrices.monthlyRaw||'$4.99/month')}</p>
-              <p className="font-sans text-[12.5px] text-headline mt-0.5">{showTrialCopy('monthly')?(rcPrices.monthly||'Then $4.99/month'):'Billed monthly'}</p>
+              <p className="font-sans text-[13px] text-headline font-bold">{showTrialCopy('monthly')?'3 days free':(rcPrices.monthlyRaw||(isAndroidApp?'Monthly':'$4.99/month'))}</p>
+              <p className="font-sans text-[12.5px] text-headline mt-0.5">{showTrialCopy('monthly')?(rcPrices.monthly||(isAndroidApp?'':'Then $4.99/month')):'Billed monthly'}</p>
             </button>
           </div>
 
@@ -8503,6 +8669,7 @@ function App(){
           {rcStoreLoading&&!purchaseError&&<p className="font-sans text-[13px] text-center mb-3 fade-in text-body opacity-50">Connecting to Google Play...</p>}
           {!rcStoreLoading&&!rcStoreReady&&!purchaseError&&<p className="font-sans text-[13px] text-center mb-3 fade-in" style={{color:'#B34B3D'}}>{isAndroidApp?'We couldn\'t reach Google Play. Check your connection, then tap Try again.':'Subscriptions could not be loaded from Google Play yet. Pull down and reopen the paywall, or try again in a moment.'}</p>}
           {purchaseError&&<p className="font-sans text-[13px] text-center mb-3 fade-in" style={{color:'#B34B3D'}}>{purchaseError}</p>}
+          {isAndroidApp&&purchaseError&&/Google Play\.$/.test(purchaseError)&&<button onClick={openManageSubscription} className="font-sans text-[13px] font-semibold underline underline-offset-2 mb-3 block mx-auto" style={{color:'#614433'}}>Manage in Google Play</button>}
 
           <div className="pfd-paywall-cta">
             {/* CTA */}
@@ -8550,7 +8717,7 @@ function App(){
               style={{background:(purchaseLoading||(isAndroidApp&&rcStoreLoading))?'rgba(196,154,122,0.6)':'#C49A7A',boxShadow:'0 6px 20px rgba(196,154,122,0.35)'}}>
               {isAndroidApp?paywallCtaLabel():(purchaseLoading?'Processing...':'Start my 3-day free trial')}
             </button>
-            <p className="font-sans text-[11px] text-body opacity-40 mt-2">{showTrialCopy(pricePlan)?'3 days free, then ':''}{pricePlan==='yearly'?((isAndroidApp&&rcPrices.yearlyRaw)||'$29.99/year'):((isAndroidApp&&rcPrices.monthlyRaw)||'$4.99/month')}. Cancel anytime.</p>
+            {(!isAndroidApp||(pricePlan==='yearly'?rcPrices.yearlyRaw:rcPrices.monthlyRaw))&&<p className="font-sans text-[11px] text-body opacity-40 mt-2">{showTrialCopy(pricePlan)?'3 days free, then ':''}{pricePlan==='yearly'?((isAndroidApp&&rcPrices.yearlyRaw)||'$29.99/year'):((isAndroidApp&&rcPrices.monthlyRaw)||'$4.99/month')}. Cancel anytime.</p>}
           </div>
 
           <button onClick={function(){setShowPaywall(false);setShowOnboard(false);setShowAuth(true);setAuthMode('login');}} className="font-sans text-[13px] text-body opacity-50 hover:opacity-80 mt-5 transition-opacity block mx-auto">Already have an account? <span className="underline underline-offset-2">Sign in</span></button>
@@ -8603,7 +8770,7 @@ function App(){
           {[
             {t:'1. Overview',b:'Welcome to Passion Flow Daily ("the App"). By downloading, installing, or using the App, you agree to these Terms of Service. Passion Flow Daily is a lifestyle app designed to help you bring balance to your day through guided daily actions across five areas: Create, Mindset, Connect, Move, and Reset. The App is operated by Flow Innovations ("we," "us," or "our").'},
             {t:'2. Eligibility',b:'You must be at least 13 years old to use this App.'},
-            {t:'3. Subscriptions & Billing',b:isAndroidApp?'Passion Flow Daily offers auto-renewing subscriptions.\n\n• Monthly: $4.99 / month\n• Yearly: $29.99 / year\n\nPayment is charged to your Google Play account at confirmation. Subscriptions auto-renew unless canceled at least 24 hours before the end of the current period. You can manage or cancel your subscription in Google Play.':'Passion Flow Daily offers auto-renewing subscriptions.\n\n• Monthly: $4.99 / month\n• Yearly: $29.99 / year\n\nPayment is charged to your Apple ID account at confirmation. Subscriptions auto-renew unless turned off at least 24 hours before the end of the current period. You can manage your subscription in your Apple ID account settings.'},
+            {t:'3. Subscriptions & Billing',b:isAndroidApp?'Passion Flow Daily offers auto-renewing monthly and yearly subscriptions.\n\n• Monthly: '+(rcPrices.monthlyRaw||'price shown before purchase')+'\n• Yearly: '+(rcPrices.yearlyRaw||'price shown before purchase')+'\n\nPrices are shown in the app and on the Google Play checkout screen before you buy, in your local currency, and may include applicable taxes. If a free trial is offered and you do not cancel before it ends, your subscription starts and you are charged automatically.\n\nPayment is charged to your Google Play account at confirmation. Subscriptions auto-renew unless canceled at least 24 hours before the end of the current period. You can manage or cancel your subscription in Google Play.':'Passion Flow Daily offers auto-renewing subscriptions.\n\n• Monthly: $4.99 / month\n• Yearly: $29.99 / year\n\nPayment is charged to your Apple ID account at confirmation. Subscriptions auto-renew unless turned off at least 24 hours before the end of the current period. You can manage your subscription in your Apple ID account settings.'},
             {t:'4. Restore Purchases',b:'If you have previously subscribed and reinstall the App or switch devices, you can restore your subscription using the "Restore" option.'},
             {t:'5. User Content',b:'You may create reflections, journal entries, voice memos, and saved ideas. You retain full ownership of your content.'},
             {t:'6. Acceptable Use',b:'You agree not to misuse the App, reverse-engineer it, or use it for unlawful or harmful purposes.'},
@@ -8659,7 +8826,7 @@ function App(){
     </div>}
 
     {/* Restore Purchase Modal */}
-    {showRestore&&<div className="fixed inset-0 z-[100] flex items-center justify-center px-5" style={{background:'rgba(0,0,0,0.5)'}} onClick={function(e){if(e.target===e.currentTarget&&restoreState==='success')setShowRestore(false);}}>
+    {showRestore&&<div className="fixed inset-0 z-[100] flex items-center justify-center px-5" style={{background:'rgba(0,0,0,0.5)'}} onClick={function(e){if(e.target===e.currentTarget&&restoreState==='success'){setShowRestore(false);setRestoreNote('');}}}>
       <div className="w-full max-w-[360px] rounded-[22px] text-center fade-in px-6 py-7" style={{background:'#FAF6F2',boxShadow:'0 12px 48px rgba(0,0,0,0.2)'}}>
         {restoreState==='loading'?<div>
           {/* Loading spinner */}
@@ -8667,11 +8834,16 @@ function App(){
             <div className="w-[36px] h-[36px] rounded-full border-[3px] border-t-transparent" style={{borderColor:'#C49A7A',borderTopColor:'transparent',animation:'slowSpin 0.9s linear infinite'}}/>
           </div>
           <h3 className="font-serif text-[18px] text-headline italic">Restoring your purchase...</h3>
+        </div>:(isAndroidApp&&(restoreNote||purchaseError))?<div>
+          <h3 className="font-serif text-[20px] text-headline italic mb-2">Nothing restored</h3>
+          <p className="font-sans text-[13px] text-body opacity-70 leading-relaxed mb-5">{restoreNote||purchaseError}</p>
+          <button onClick={function(){setShowRestore(false);setRestoreNote('');openManageSubscription();}} className="w-full font-sans text-[13px] font-semibold py-2.5 rounded-full mb-2 active:scale-[0.98]" style={{color:'#614433',background:'rgba(196,154,122,0.15)'}}>Manage in Google Play</button>
+          <button onClick={function(){setShowRestore(false);setRestoreNote('');}} className="w-full font-sans text-[13px] font-semibold text-white py-2.5 rounded-full active:scale-[0.98]" style={{background:'#C49A7A'}}>OK</button>
         </div>:<div>
           <p className="text-[30px] mb-3 check-pop">{'\u2714\uFE0F'}</p>
           <h3 className="font-serif text-[20px] text-headline italic mb-2">Your purchase has been restored.</h3>
           <p className="font-sans text-[12px] text-body opacity-50 mb-5">you're all set.</p>
-          <button onClick={function(){setShowRestore(false);}} className="w-full font-sans text-[13px] font-semibold text-white py-2.5 rounded-full active:scale-[0.98]" style={{background:'#C49A7A'}}>Done</button>
+          <button onClick={function(){setShowRestore(false);setRestoreNote('');}} className="w-full font-sans text-[13px] font-semibold text-white py-2.5 rounded-full active:scale-[0.98]" style={{background:'#C49A7A'}}>Done</button>
         </div>}
       </div>
     </div>}
@@ -8929,7 +9101,7 @@ function App(){
         </div>
         {overlayType==='reflection'&&<div>
           {satisfaction&&<p className="font-sans text-[12px] text-accent opacity-60 mb-2">{satisfaction==='yes'?'\u2728 balanced':satisfaction==='getting-there'?'\uD83D\uDE0C getting there':'\uD83D\uDE15 not quite'}</p>}
-          <p className="font-sans text-[11px] text-body opacity-40 mb-2">flow: {flowScore}/10 {flowScore<=3?'\uD83D\uDCA8':flowScore<=7?'\uD83C\uDFAF':'\uD83D\uDE80'}</p>
+          <p className="font-sans text-[11px] text-body opacity-40 mb-2" style={isAndroidApp&&flowScore==null?{display:'none'}:null}>flow: {flowScore}/10 {flowScore<=3?'\uD83D\uDCA8':flowScore<=7?'\uD83C\uDFAF':'\uD83D\uDE80'}</p>
           {selectedFeelings.length>0&&<div className="flex flex-wrap justify-center gap-1.5 mb-2">{selectedFeelings.map(function(f){var fe=FEELINGS.find(function(x){return x.label===f;});return <span key={f} className="font-sans text-[10px] text-accent bg-accent/10 px-2.5 py-0.5 rounded-full">{fe?fe.emoji:''} {f}</span>;})}</div>}
           {reflection&&<p className="font-serif text-[12px] text-body italic opacity-50">"{reflection}"</p>}
         </div>}
@@ -8954,7 +9126,7 @@ function App(){
               <p className="font-sans text-[9px] text-body opacity-40 uppercase tracking-[0.15em] mb-2">Passion Flow Daily</p>
               <p className="font-serif text-[20px] text-headline italic leading-snug mb-4">{shareLog.date}</p>
               <div className="space-y-2.5 mb-5">{CARDS.map(function(c){var act=shareLog.activities[c.id];if(!act)return null;return <div key={c.id} className="flex items-start gap-2.5 px-3 py-2 rounded-[12px]" style={{background:'rgba(255,255,255,0.6)',border:'1px solid '+c.borderColor}}><span className="text-[15px] mt-0.5">{c.emoji}</span><div className="flex-1"><p className="font-sans text-[9px] font-bold uppercase tracking-[0.08em] text-body opacity-40">{c.title}</p><p className="font-sans text-[12px] text-headline leading-snug">{act}</p></div></div>;})}</div>
-              <div className="flex items-center gap-3 mb-4"><p className="font-sans text-[11px] text-body opacity-50">flow: {shareLog.flow}/10 {shareLog.flow<=3?'\uD83D\uDCA8':shareLog.flow<=7?'\uD83C\uDFAF':'\uD83D\uDE80'}</p>{shareLog.balance&&<p className="font-sans text-[11px] text-headline">{shareLog.balance==='yes'?'\u2728 balanced':shareLog.balance==='getting-there'?'\uD83D\uDE0C getting there':'\uD83D\uDE15 not quite'}</p>}</div>
+              <div className="flex items-center gap-3 mb-4"><p className="font-sans text-[11px] text-body opacity-50" style={isAndroidApp&&shareLog.flow==null?{display:'none'}:null}>flow: {shareLog.flow}/10 {shareLog.flow<=3?'\uD83D\uDCA8':shareLog.flow<=7?'\uD83C\uDFAF':'\uD83D\uDE80'}</p>{shareLog.balance&&<p className="font-sans text-[11px] text-headline">{shareLog.balance==='yes'?'\u2728 balanced':shareLog.balance==='getting-there'?'\uD83D\uDE0C getting there':'\uD83D\uDE15 not quite'}</p>}</div>
               {shareLog.feelings&&shareLog.feelings.length>0&&<div className="flex flex-wrap gap-1.5 mb-4">{shareLog.feelings.map(function(f){var fe=FEELINGS.find(function(x){return x.label===f;});return <span key={f} data-share-pill={f} style={{display:'inline-block',fontFamily:'Inter,sans-serif',fontSize:9,fontWeight:600,color:'#C49A7A',background:'#FFFFFF',border:'1px solid rgba(196,154,122,0.22)',padding:'0 10px',borderRadius:999,lineHeight:'26px',height:26,boxSizing:'border-box'}}>{fe?fe.emoji+' ':''}{f}</span>;})}</div>}
               {shareLog.reflection&&<p className="font-serif text-[12px] text-body italic opacity-55 mb-4">"{shareLog.reflection}"</p>}
               <hr data-share-footer-line={true} style={{display:'block',width:'100%',height:1,border:'none',background:'rgba(0,0,0,0.06)',margin:'16px 0 14px'}}/>

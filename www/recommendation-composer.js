@@ -167,13 +167,15 @@
 
   // Android only (#8): ideas that already carry their own length or are clearly longer
   // than a few minutes should not get a "5-10 minutes" style lead-in.
-  var LONG_OR_TIMED_RE = /\b\d+\s*(minutes?|mins?|hours?|hrs?|days?|weeks?|pages?)\b|\b(an?|one|full|whole|entire)\s+(hour|day|afternoon|evening|morning|night|weekend|week|month|season)\b|\b(all day|overnight|weekend|this week|this season|every day|every night|consecutive|trip|travel|spa|bathhouse|dinner|meal|hike|trail|park|camping|museum|concert|class|course|league|festival|road trip|sunrise|sunset|picnic|beach)\b/i;
+  var LONG_OR_TIMED_RE = /\b\d+\s*(minutes?|mins?|hours?|hrs?|days?|weeks?|pages?)\b|\b(an?|one|full|whole|entire)\s+(hour|day|afternoon|evening|morning|night|weekend|week|month|season)\b|\b(all day|every|overnight|weekend|this week|this season|every day|every night|consecutive|trip|travel|spa|bathhouse|dinner|meal|hike|trail|park|camping|museum|concert|class|course|league|festival|road trip|sunrise|sunset|picnic|beach)\b/i;
 
   function ideaSuitsShortPrefix(idea) {
     if (!idea) return false;
-    var te = idea.timeEstimate;
-    if (te !== 'micro' && te !== 'short') return false;
-    return !LONG_OR_TIMED_RE.test(idea.text || '');
+    // Most ideas get a random time estimate, so only trust ideas whose own wording
+    // says they are quick.
+    var t = idea.text || '';
+    if (!/\b(quick|quickly|one sentence|one line|a note|a text|voice memo|push.?ups|breathe|stretch)\b/i.test(t)) return false;
+    return !LONG_OR_TIMED_RE.test(t);
   }
 
   function durationLabel(profile, idea) {
