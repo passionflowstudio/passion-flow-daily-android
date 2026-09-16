@@ -148,12 +148,33 @@
       'Take yourself somewhere for {duration}, a café, bookstore, or anywhere that gets you out of your usual loop.',
       'Go somewhere alone for {duration} that feels like a small treat just for you.'
     ],
+    nature_connect: [
+      'Connect with nature: {text}',
+      'Get outside and connect with nature: {text}'
+    ],
     generic: [
       '{text}',
       'Try this for {duration}: {text}',
       'Give yourself {duration} for this: {text}'
     ]
   };
+
+  function isAndroidPlatform() {
+    try {
+      return !!(global.Capacitor && global.Capacitor.getPlatform && global.Capacitor.getPlatform() === 'android');
+    } catch (e) { return false; }
+  }
+
+  // Android only (#8): ideas that already carry their own length or are clearly longer
+  // than a few minutes should not get a "5-10 minutes" style lead-in.
+  var LONG_OR_TIMED_RE = /\b\d+\s*(minutes?|mins?|hours?|hrs?|days?|weeks?|pages?)\b|\b(an?|one|full|whole|entire)\s+(hour|day|afternoon|evening|morning|night|weekend|week|month|season)\b|\b(all day|overnight|weekend|this week|this season|every day|every night|consecutive|trip|travel|spa|bathhouse|dinner|meal|hike|trail|park|camping|museum|concert|class|course|league|festival|road trip|sunrise|sunset|picnic|beach)\b/i;
+
+  function ideaSuitsShortPrefix(idea) {
+    if (!idea) return false;
+    var te = idea.timeEstimate;
+    if (te !== 'micro' && te !== 'short') return false;
+    return !LONG_OR_TIMED_RE.test(idea.text || '');
+  }
 
   function durationLabel(profile, idea) {
     var tb = profile.defaultTimeBucket || idea.timeEstimate || 'short';
@@ -471,6 +492,7 @@
         return communityMatch(profile, idea, hashStr((idea && idea.id) || idea.text || '')) ? 'community_named' : 'community_keep';
       }
       if (primary === 'friends' || ideaTargets.indexOf('friends') >= 0) return 'friend_keep';
+      if (isAndroidPlatform() && idea.packId === 'nature-connect') return 'nature_connect';
       return 'generic';
     }
     if (categoryId === 'create') {
@@ -542,8 +564,11 @@
     }
     var seed = hashStr(idea.id + (profile.updatedAt || '') + family);
     var tpl = pickVariant(family, seed);
+    if (isAndroidPlatform() && family === 'generic' && tpl.indexOf('{duration}') >= 0 && !ideaSuitsShortPrefix(idea)) {
+      tpl = '{text}';
+    }
     var title = fillTemplate(tpl, profile, idea, seed, opts);
-    if (family === 'generic' && title.indexOf('{text}') < 0 && title === idea.text) {
+    if (!isAndroidPlatform() && family === 'generic' && title.indexOf('{text}') < 0 && title === idea.text) {
       title = fillTemplate(pickVariant('generic', seed + 1), profile, idea, seed + 1, opts);
     }
     var theme = global.PFDRecommendationEngine && global.PFDRecommendationEngine.recommendationThemeKey

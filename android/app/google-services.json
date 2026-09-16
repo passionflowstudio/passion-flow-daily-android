@@ -1,0 +1,98 @@
+{
+  "project_info": {
+    "project_number": "307906430534",
+    "project_id": "passion-flow-daily",
+    "storage_bucket": "passion-flow-daily.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:307906430534:android:98b3433b3f7f75cfc76c47",
+        "android_client_info": {
+          "package_name": "com.flowinnov.passion_flow_daily"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "307906430534-k3grek01qbdcinvvanj0s00vq8sck46i.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBgZJl5juJtWmpmE2X8DZJvAuws0_agQf4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "307906430534-k3grek01qbdcinvvanj0s00vq8sck46i.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "307906430534-08m095106pk9sl4057e60m2dp6r48sri.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.passionflowdaily.app"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:307906430534:android:36e7ec5fc4dcd897c76c47",
+        "android_client_info": {
+          "package_name": "com.passionflowdaily.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "307906430534-ljdgb3kjh9i8bn0d77bvah8o8lfc2rlo.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.passionflowdaily.app",
+            "certificate_hash": "7a7d85c7049aad19169672458c2bdcecf4d554f7"
+          }
+        },
+        {
+          "client_id": "307906430534-rqsnbti548dcb30refjamfmmrrnfn0fk.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.passionflowdaily.app",
+            "certificate_hash": "46a4e6226434132fbbd32ba9fee39408a9942df7"
+          }
+        },
+        {
+          "client_id": "307906430534-k3grek01qbdcinvvanj0s00vq8sck46i.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBgZJl5juJtWmpmE2X8DZJvAuws0_agQf4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "307906430534-k3grek01qbdcinvvanj0s00vq8sck46i.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "307906430534-08m095106pk9sl4057e60m2dp6r48sri.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.passionflowdaily.app"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

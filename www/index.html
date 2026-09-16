@@ -78,6 +78,12 @@
       flex-shrink: 0;
       padding-bottom: max(1.25rem, env(safe-area-inset-bottom));
     }
+    .daily-flow-sheet {
+      height: min(88dvh, calc(100dvh - env(safe-area-inset-top, 0px) - 0.75rem));
+      max-height: calc(100dvh - env(safe-area-inset-top, 0px) - 0.75rem);
+      overflow: hidden;
+      transform: translateZ(0);
+    }
     .mobile-tab-bar {
       position: fixed;
       left: 0;
@@ -199,9 +205,14 @@
     }
     .ob-tap-breathe { animation: obTapBreathe 2.6s ease-in-out infinite; }
     .ob-payoff-stack { display:flex; flex-direction:column; flex:1 1 auto; min-height:0; width:100%; }
+    .ob-payoff-static { animation:none !important; opacity:1 !important; transform:none !important; }
+    .ob-payoff-header { flex-shrink:0; min-height:84px; opacity:1 !important; transform:none !important; position:relative; z-index:2; }
     .ob-payoff-cards { flex:1 1 auto; min-height:0; display:flex; flex-direction:column; gap:8px; }
-    .ob-payoff-card { flex:1 1 0; min-height:0; }
+    .ob-payoff-card { flex:1 1 0; min-height:74px; }
+    .ob-payoff-copy { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3; overflow:hidden; word-break:break-word; }
     .pfd-payoff-sheet { height:calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 16px); max-height:820px; }
+    .pfd-paywall-hero { padding-top:max(2.25rem, calc(env(safe-area-inset-top, 0px) + 0.75rem)); }
+    .pfd-paywall-cta { position:sticky; bottom:0; z-index:3; padding:10px 0 max(10px, env(safe-area-inset-bottom, 0px)); background:linear-gradient(180deg, rgba(250,246,242,0) 0%, rgba(250,246,242,0.94) 28%, rgba(250,246,242,0.98) 100%); backdrop-filter:blur(4px); }
     @media (min-width: 700px) {
       .ob-payoff-stack { justify-content:center; }
       .ob-payoff-cards { flex:none; }
@@ -211,6 +222,11 @@
     @media (prefers-reduced-motion: reduce) {
       .ob-wash-drift, .ob-tap-breathe { animation: none; }
     }
+    /* Android only: WebView repaint fixes for the first-look cards, and no visible scrollbars */
+    html.pfd-android .ob-payoff-card { transform:translateZ(0); -webkit-backface-visibility:hidden; backface-visibility:hidden; isolation:isolate; contain:paint; }
+    html.pfd-android .ob-payoff-copy { transform:translateZ(0); }
+    html.pfd-android * { scrollbar-width:none; }
+    html.pfd-android *::-webkit-scrollbar { display:none; width:0; height:0; }
     @keyframes overlayIn { from{opacity:0;transform:scale(0.9)} to{opacity:1;transform:scale(1)} }
     @keyframes overlayOut { from{opacity:1;transform:scale(1)} to{opacity:0;transform:scale(0.95)} }
     .overlay-in { animation: overlayIn 0.4s cubic-bezier(0.34,1.56,0.64,1) forwards; }
@@ -243,6 +259,7 @@
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script>try{if(window.Capacitor&&window.Capacitor.getPlatform&&window.Capacitor.getPlatform()==='android'){document.documentElement.classList.add('pfd-android');}}catch(e){}</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
@@ -268,8 +285,31 @@
     messagingSenderId: "307906430534",
     appId: "1:307906430534:web:12b2bc91d05a7c47c76c47"
   };
+  // Android only: skip the web popup/redirect sign-in helper. The Android app signs in
+  // natively (Google plugin + credentials), and loading that helper page in the
+  // WebView delays restoring the saved login by several seconds on launch.
+  try {
+    if (window.Capacitor && window.Capacitor.getPlatform && window.Capacitor.getPlatform() === 'android') {
+      delete firebaseConfig.authDomain;
+    }
+  } catch (e) {}
   firebase.initializeApp(firebaseConfig);
+  // Android only: make sure the login is saved on the device between app launches.
+  try {
+    if (window.Capacitor && window.Capacitor.getPlatform && window.Capacitor.getPlatform() === 'android') {
+      firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(function () {});
+    }
+  } catch (e) {}
   window.db = firebase.firestore();
+  // Android only: keep unsent changes on the device so they sync later
+  // instead of being lost if the app closes during a connection hiccup.
+  try {
+    if (window.Capacitor && window.Capacitor.getPlatform && window.Capacitor.getPlatform() === 'android') {
+      window.db.enablePersistence({ synchronizeTabs: false }).catch(function (e) {
+        console.warn('[firestore] offline persistence unavailable', e && e.code);
+      });
+    }
+  } catch (e) {}
   try {
     if (firebase.analytics) window.firebaseAnalytics = firebase.analytics();
   } catch (e) {}
@@ -1600,6 +1640,10 @@ function BalanceWheel(p){
     return 'M '+ix1+' '+iy1+' L '+ox1+' '+oy1+' A '+outerR+' '+outerR+' 0 '+la+' 1 '+ox2+' '+oy2+' L '+ix2+' '+iy2+' A '+innerR+' '+innerR+' 0 '+la+' 0 '+ix1+' '+iy1+' Z';
   }
   var minCard=CARDS.reduce(function(m,c){return (sess[c.id]||0)<(sess[m.id]||0)?c:m;});
+  // Android only: empty areas have zero-width slices, so their labels stack on one spot.
+  var onAndroid=!!(window.Capacitor&&window.Capacitor.getPlatform&&window.Capacitor.getPlatform()==='android');
+  var hideEmptyLabels=onAndroid&&total>0;
+  var emptyCards=hideEmptyLabels?CARDS.filter(function(c){return !(sess[c.id]||0);}):[];
   var insight=total===0?'Start exploring to build your balance':
     balancePct>=80?'You are beautifully balanced this week':
     balancePct>=50?minCard.emoji+' Your '+minCard.title+' area could use a little love':
@@ -1612,6 +1656,7 @@ function BalanceWheel(p){
       <text x={cx} y={cy+7} textAnchor="middle" dominantBaseline="middle" fontSize="26" fill="#614433" fontFamily="sans-serif" fontWeight="700">{balancePct}{'%'}</text>
       <text x={cx} y={cy+24} textAnchor="middle" dominantBaseline="middle" fontSize="11" fill="#614433" opacity="0.38" fontFamily="sans-serif">balance</text>
       {slices.map(function(s){
+        if(hideEmptyLabels&&!s.val)return null;
         var a=(s.start+s.end)/2;
         var r=outerR+38;
         var lx=cx+r*Math.cos(a);
@@ -1624,6 +1669,7 @@ function BalanceWheel(p){
         </text>;
       })}
     </svg>
+    {emptyCards.length>0&&<p className="font-sans text-[11px] text-body opacity-50 text-center -mt-1 mb-2">Not tried yet: {emptyCards.map(function(c){return c.title;}).join(', ')}</p>}
     <div className="mx-4 mt-1 px-4 py-3 rounded-[16px] text-center" style={{background:'rgba(196,154,122,0.07)',border:'1px solid rgba(196,154,122,0.15)'}}>
       <p className="font-sans text-[12px] text-body opacity-60 leading-relaxed italic">{insight}</p>
     </div>
@@ -2356,6 +2402,30 @@ function App(){
   var _currentUser=useState(null),currentUser=_currentUser[0],setCurrentUser=_currentUser[1];
   var _userLoaded=useState(false),userLoaded=_userLoaded[0],setUserLoaded=_userLoaded[1];
   var isNativeApp=!!(window.Capacitor&&(window.Capacitor.isNativePlatform?window.Capacitor.isNativePlatform():window.Capacitor.isNative));
+  var nativePlatform=(window.Capacitor&&window.Capacitor.getPlatform)?window.Capacitor.getPlatform():'web';
+  var isAndroidApp=isNativeApp&&nativePlatform==='android';
+  var isIosApp=isNativeApp&&nativePlatform==='ios';
+  var GOOGLE_PLAY_PACKAGE_ID='com.passionflowdaily.app';
+  var STRIPE_BILLING_PORTAL='https://billing.stripe.com/p/login/3cI5kDaQJgaQ8i5cEkbo400';
+  var APPLE_SUBSCRIPTION_URL='itms-apps://apps.apple.com/account/subscriptions';
+  function currentStoreName(){
+    if(isAndroidApp)return 'Google Play';
+    if(isIosApp)return 'App Store';
+    return 'checkout';
+  }
+  function currentBillingSystemName(){
+    if(isAndroidApp)return 'Google Play Billing';
+    if(isIosApp)return 'StoreKit';
+    return 'checkout';
+  }
+  function manageSubscriptionUrl(){
+    if(isAndroidApp)return 'https://play.google.com/store/account/subscriptions?package='+GOOGLE_PLAY_PACKAGE_ID;
+    if(isIosApp)return APPLE_SUBSCRIPTION_URL;
+    return STRIPE_BILLING_PORTAL;
+  }
+  function openManageSubscription(){
+    window.open(manageSubscriptionUrl(),'_blank');
+  }
   var _rcStoreLoad=useState(false),rcStoreLoading=_rcStoreLoad[0],setRcStoreLoading=_rcStoreLoad[1];
   var _rcStoreReady=useState(false),rcStoreReady=_rcStoreReady[0],setRcStoreReady=_rcStoreReady[1];
   var _rcStoreDiag=useState(''),rcStoreDiag=_rcStoreDiag[0],setRcStoreDiag=_rcStoreDiag[1];
@@ -2418,6 +2488,8 @@ function App(){
   var paywallComebackInFlightRef=useRef(false);
   var onboardingNotifBusyRef=useRef(false);
   var rcLoginReadyRef=useRef(null);
+  // Android only: true while the RevenueCat Pro check is still running after login.
+  var rcCheckPendingRef=useRef(false);
   useEffect(function(){
     userLoadedRef.current=userLoaded;
   },[userLoaded]);
@@ -2669,7 +2741,9 @@ function App(){
               }else if(window.RCPurchases&&window.RCPurchases.Purchases){
                 // Wait for the RevenueCat login to land, otherwise this can read
                 // the anonymous user and show a subscriber the paywall.
+                if(isAndroidApp)rcCheckPendingRef.current=true;
                 rcEntitlementCheck().then(function(ci){
+                  rcCheckPendingRef.current=false;
                   if(rcHasPro(ci)){
                     setIsPro(true);
                     try{localStorage.setItem('pfd_onboarded','1');}catch(e){}
@@ -2678,7 +2752,7 @@ function App(){
                   }else{
                     applyPaywallOrPersonalize(false);
                   }
-                }).catch(function(){applyPaywallOrPersonalize(false);});
+                }).catch(function(){rcCheckPendingRef.current=false;applyPaywallOrPersonalize(false);});
               }else{
                 applyPaywallOrPersonalize(false);
               }
@@ -2706,14 +2780,16 @@ function App(){
           }else if(window.RCPurchases&&window.RCPurchases.Purchases){
             // Firestore is unreachable (offline cold start), so fall back to the
             // StoreKit entitlement instead of locking a subscriber out.
+            if(isAndroidApp)rcCheckPendingRef.current=true;
             rcEntitlementCheck().then(function(ci){
+              rcCheckPendingRef.current=false;
               if(rcHasPro(ci)){
                 setIsPro(true);
                 applyPaywallOrPersonalize(true);
               }else{
                 applyPaywallOrPersonalize(false);
               }
-            }).catch(function(){applyPaywallOrPersonalize(false);});
+            }).catch(function(){rcCheckPendingRef.current=false;applyPaywallOrPersonalize(false);});
           }else{
             applyPaywallOrPersonalize(false);
           }
@@ -3134,7 +3210,7 @@ function App(){
     setTimeout(persistNow,50);
   }
   // Ask on the 1st, 4th and 7th day the user actually finishes something, then
-  // stop. Going to the App Store from any entry point ends the asking for good.
+  // stop. Going to the store review page from any entry point ends the asking for good.
   var REVIEW_MAX_ASKS=3;
   var REVIEW_DAYS_BETWEEN_ASKS=3;
   function reviewStateKey(uid){return 'pfd_review_state_'+uid;}
@@ -3179,9 +3255,11 @@ function App(){
   var APP_STORE_ID='6778534847';
   function openAppStoreReview(){
     markReviewDone();
-    var url=isNativeApp
+    var url=isAndroidApp
+      ?('https://play.google.com/store/apps/details?id='+GOOGLE_PLAY_PACKAGE_ID)
+      :(isNativeApp
       ?('itms-apps://itunes.apple.com/app/id'+APP_STORE_ID+'?action=write-review')
-      :('https://apps.apple.com/app/id'+APP_STORE_ID+'?action=write-review');
+      :('https://apps.apple.com/app/id'+APP_STORE_ID+'?action=write-review'));
     window.open(url,'_blank');
     trackEvent('app_review_opened');
   }
@@ -3356,8 +3434,8 @@ function App(){
   function renderOnboardingPayoffScreen(){
     if(onboardingPayoffPlan){
       var copy=buildOnboardingPayoffCopy(personalizationProfile,onboardingWasSkipped);
-      return <div className="ob-fade-up ob-payoff-stack text-center overflow-hidden">
-        <div className="flex-shrink-0 px-1">
+      return <div className="ob-payoff-static ob-payoff-stack text-center overflow-hidden">
+        <div className="ob-payoff-header px-1">
           <p className="text-[20px] mb-0.5">{'\u2728'}</p>
           <p className="font-serif text-[19px] md:text-[21px] text-headline italic mb-1 leading-snug">{copy.title}</p>
           <p className="font-sans text-[12px] text-headline mb-2 leading-snug px-1">{copy.subtitle}</p>
@@ -3371,17 +3449,16 @@ function App(){
               <div className="w-[36px] h-[36px] rounded-[12px] flex items-center justify-center flex-shrink-0 text-[18px]" style={{background:cardPickGradient(c.id),boxShadow:'0 2px 8px rgba(0,0,0,0.12)'}}>{c.emoji}</div>
               <div className="flex-1 min-h-0 min-w-0 flex flex-col justify-center overflow-hidden">
                 <p className="font-sans text-[10px] font-semibold text-body opacity-50 mb-0.5 flex-shrink-0">{c.title}</p>
-                <div className="min-h-0 overflow-y-auto" style={{WebkitOverflowScrolling:'touch',overscrollBehavior:'contain',maxHeight:'100%'}}>
-                  <p key={item.ideaId||item.title} className="font-sans text-[13px] text-headline leading-snug">{item.title}</p>
-                </div>
+                <p key={item.ideaId||item.title} className="ob-payoff-copy font-sans text-[13px] text-headline leading-snug">{item.title}</p>
               </div>
-              {shufflesLeft>0&&<button type="button" onClick={function(){shuffleOnboardingPayoffCategory(c.id);}} className="flex-shrink-0 w-[34px] h-[34px] rounded-full flex items-center justify-center active:scale-[0.92] transition-transform" style={{background:'rgba(255,255,255,0.78)',border:'1px solid '+c.borderColor,color:'#614433'}} aria-label={'Shuffle '+c.title}>
+              <button type="button" disabled={shufflesLeft<=0} onClick={function(){if(shufflesLeft>0)shuffleOnboardingPayoffCategory(c.id);}} className={'flex-shrink-0 w-[34px] h-[34px] rounded-full flex items-center justify-center active:scale-[0.92] transition-transform '+(shufflesLeft>0?'':(isAndroidApp?'opacity-30 pointer-events-none':'invisible pointer-events-none'))} style={{background:'rgba(255,255,255,0.78)',border:'1px solid '+c.borderColor,color:'#614433'}} aria-label={'Shuffle '+c.title} aria-hidden={shufflesLeft<=0&&!isAndroidApp}>
                 <ShuffleIcon/>
-              </button>}
+              </button>
             </div>;
           })}
         </div>
         <div className="flex-shrink-0 pt-2.5 pb-1">
+          {isAndroidApp&&CARDS.some(function(c){return (onboardingPayoffShuffleCount[c.id]||0)>=OB_PAYOFF_SHUFFLES;})&&<p className="font-sans text-[11px] text-body opacity-55 leading-snug mb-1">You've used the free shuffles on a card. Unlock for unlimited ideas.</p>}
           <p className="font-sans text-[11.5px] text-headline font-medium leading-snug mb-0.5">{copy.footer||'A fresh personalized flow will be ready every morning.'}</p>
           {onboardingRemindersOn()&&<p className="font-sans text-[11px] text-body opacity-50 leading-snug">We'll remind you when tomorrow's flow is ready.</p>}
           <button onClick={function(){
@@ -3893,6 +3970,7 @@ function App(){
     if(!window.PFDRecommendationEngine||!window.PFDRecommendationComposer)return;
     ensureIdeaIndex();
     if(!planMyDayResult)planAddedThisSessionRef.current=false;
+    setOpenCard(null);
     var today=getLocalDayKey();
     if(!forceShuffle&&planMyDayCache&&planMyDayDayKey===today){
       setPlanMyDayResult(planMyDayCache);
@@ -4191,7 +4269,7 @@ function App(){
     var labelSize=compact?'text-[10px]':'text-[10px]';
     var hintSize=compact?'text-[11px]':'text-[12px]';
     return <div>
-      {!isNativeApp&&<p className={'font-sans '+hintSize+' text-body opacity-45 mb-3 leading-relaxed'}>Daily reminders are available in the iOS app.</p>}
+      {!isNativeApp&&<p className={'font-sans '+hintSize+' text-body opacity-45 mb-3 leading-relaxed'}>Daily reminders are available in the mobile app.</p>}
       <div className="mb-4">
         <div className="flex items-center justify-between gap-3 mb-2">
           <div>
@@ -4258,8 +4336,8 @@ function App(){
       {title:'How do you recharge best?',emoji:'🌿',sub:'Pick up to 3',body:<div className="space-y-2 max-w-[340px] mx-auto">{RESET_STYLE_OPTIONS.map(function(opt){var sel=(pp.resetStyles||[]).indexOf(opt.id)>=0;return <button key={opt.id} onClick={function(){toggleProfileArray('resetStyles',opt.id,3);}} className="w-full text-left px-3 py-2 rounded-[12px] border" style={chipStyle(sel)}><span className="font-sans text-[13px] font-medium leading-snug">{opt.label}</span></button>;})}</div>}
     ];
     var l1=[
-      {titleLines:['What would you love more','of in your life right now?'],emoji:'✨',sub:'Pick up to 4',body:<div className="flex flex-col gap-2 w-full max-w-[340px] mx-auto">{OVERALL_GOAL_OPTIONS.map(function(opt){var sel=(pp.overallGoals||[]).indexOf(opt.id)>=0;return <button key={opt.id} onClick={function(){toggleOverallGoal(opt.id);}} className="w-full font-sans text-[13px] px-4 py-2.5 rounded-full border transition-all active:scale-[0.98]" style={chipStyle(sel)}>{opt.label}</button>;})}</div>},
-      {titleLines:["What's been getting in the way","of enjoying your days?"],emoji:'🌙',sub:'Pick up to 2',body:<div className="flex flex-wrap gap-2 justify-center">{CORE_FRICTION_OPTIONS.map(function(opt){var sel=(pp.coreFrictions||[]).indexOf(opt.id)>=0;return <button key={opt.id} onClick={function(){toggleProfileArray('coreFrictions',opt.id,2);}} className="font-sans text-[13px] px-3 py-2 rounded-full border transition-all active:scale-[0.95]" style={chipStyle(sel)}>{opt.label}</button>;})}</div>},
+      {titleLines:['What would you love more','of in your life right now?'],emoji:'✨',sub:'Pick up to 4',body:<div className="flex flex-col gap-1.5 w-full max-w-[340px] mx-auto">{OVERALL_GOAL_OPTIONS.map(function(opt){var sel=(pp.overallGoals||[]).indexOf(opt.id)>=0;return <button key={opt.id} onClick={function(){toggleOverallGoal(opt.id);}} className="w-full font-sans text-[12px] px-4 py-2 rounded-full border transition-all active:scale-[0.98]" style={chipStyle(sel)}>{opt.label}</button>;})}</div>},
+      {titleLines:["What's been getting in the way","of enjoying your days?"],emoji:'🌙',sub:'Pick up to 2',body:<div className="flex flex-wrap gap-1.5 justify-center">{CORE_FRICTION_OPTIONS.map(function(opt){var sel=(pp.coreFrictions||[]).indexOf(opt.id)>=0;return <button key={opt.id} onClick={function(){toggleProfileArray('coreFrictions',opt.id,2);}} className="font-sans text-[12px] px-2.5 py-1.5 rounded-full border transition-all active:scale-[0.95]" style={chipStyle(sel)}>{opt.label}</button>;})}</div>},
       {titleLines:['What does your','everyday life look like?'],emoji:'🕰️',sub:'Optional. Bandwidth and time matter most',body:renderEverydayLifeFields(pp,false)}
     ];
     if(personalizeMode==='full'){
@@ -4269,10 +4347,10 @@ function App(){
       }
       var fullScr=deepPersonalizationStep<=3?l1[deepPersonalizationStep-1]:layer2Screens[deepPersonalizationStep-4];
       return <div className="text-center">
-        <p className="text-[24px] mb-1">{fullScr.emoji}</p>
+        <p className="text-[22px] mb-1">{fullScr.emoji}</p>
         {renderPersonalizationStepTitle(fullScr)}
-        <p className="font-sans text-[15px] font-medium text-headline mb-4 max-w-[300px] mx-auto">{fullScr.sub}</p>
-        <p className="font-sans text-[12px] text-headline mb-3">{deepPersonalizationStep} of {FULL_TOTAL}</p>
+        <p className="font-sans text-[13px] font-medium text-headline mb-3 max-w-[300px] mx-auto">{fullScr.sub}</p>
+        <p className="font-sans text-[11px] text-headline mb-2">{deepPersonalizationStep} of {FULL_TOTAL}</p>
         {fullScr.body}
       </div>;
     }
@@ -4298,7 +4376,7 @@ function App(){
   function renderDeepPersonalizationActions(){
     var LAYER2_TOTAL=8;
     var FULL_TOTAL=11;
-    var primaryCls='font-sans text-[13px] font-semibold text-white px-8 py-3 rounded-full';
+    var primaryCls='font-sans text-[13px] font-semibold text-white px-8 py-2.5 rounded-full';
     var secondaryCls='font-sans text-[13px] text-headline py-1';
     var backBtn=deepPersonalizationStep>0?<button type="button" onClick={function(){setDeepPersonalizationStep(deepPersonalizationStep-1);}} className={secondaryCls}>Back</button>:null;
     if(personalizeMode==='full'){
@@ -4322,7 +4400,7 @@ function App(){
     return <div className="flex flex-col items-center gap-2 w-full"><button onClick={function(){if(isLast)finishDeepPersonalization(false);else setDeepPersonalizationStep(deepPersonalizationStep+1);}} className={primaryCls} style={{background:'#C49A7A'}}>{isLast?'Finish':'Continue'}</button>{backBtn}</div>;
   }
   function renderDeepPersonalizationScreen(){
-    return <><div className="flex-1 overflow-y-auto min-h-0">{renderDeepPersonalizationBody()}</div><div className="flex-shrink-0 pt-3 mt-2" style={{borderTop:'1px solid rgba(196,154,122,0.12)'}}>{renderDeepPersonalizationActions()}</div></>;
+    return <><div className="flex-1 overflow-y-auto min-h-0">{renderDeepPersonalizationBody()}</div><div className="flex-shrink-0 pt-2 mt-2" style={{borderTop:'1px solid rgba(196,154,122,0.12)'}}>{renderDeepPersonalizationActions()}</div></>;
   }
   function routeToPersonalization(){
     if(existingAccountRef.current||hasPersonalizedFlow(currentUser&&currentUser.uid)){
@@ -4937,12 +5015,15 @@ function App(){
       return 'An account already exists with this email. Please continue with Google instead.';
     }
     if(methods.indexOf('apple.com')>=0){
+      if(isAndroidApp)return 'An account already exists with this email using Apple. Please sign in on an Apple device first, then add another sign-in method from your account.';
       return 'An account already exists with this email. Please continue with Apple instead.';
     }
     if(methods.indexOf('password')>=0){
       return 'An account already exists with this email. Please sign in with your email and password instead.';
     }
-    return 'An account already exists with this email. Please continue with Google or Apple, or sign in with your password — whichever you used originally.';
+    return isAndroidApp
+      ?'An account already exists with this email. Please continue with Google or sign in with your password — whichever you used originally.'
+      :'An account already exists with this email. Please continue with Google or Apple, or sign in with your password — whichever you used originally.';
   }
 
   function lookupAuthProviders(email){
@@ -5009,16 +5090,39 @@ function App(){
     setAuthError('');
   }
 
+  function finishGoogleSignIn(result){
+    if(!result||!result.idToken)throw new Error('Missing Google ID token');
+    var cred=result.accessToken
+      ? firebase.auth.GoogleAuthProvider.credential(result.idToken,result.accessToken)
+      : firebase.auth.GoogleAuthProvider.credential(result.idToken);
+    return firebase.auth().signInWithCredential(cred);
+  }
+
+  function getAndroidGoogleAuth(){
+    return window.Capacitor&&window.Capacitor.Plugins&&window.Capacitor.Plugins.GoogleAuth;
+  }
+
+  function clearAndroidGoogleAuthState(){
+    var GoogleAuth=getAndroidGoogleAuth();
+    if(!isAndroidApp||!GoogleAuth||!GoogleAuth.signOut)return Promise.resolve();
+    return GoogleAuth.signOut().catch(function(e){
+      console.warn('[google-auth] android credential clear failed',e);
+    });
+  }
+
   function handleGoogleSignIn(){
-    if(isNativeApp&&window.webkit&&window.webkit.messageHandlers&&window.webkit.messageHandlers.googleAuth){
-      new Promise(function(resolve,reject){
+    var googlePromise=null;
+    if(isAndroidApp&&getAndroidGoogleAuth()&&getAndroidGoogleAuth().signIn){
+      googlePromise=getAndroidGoogleAuth().signIn();
+    }else if(isNativeApp&&window.webkit&&window.webkit.messageHandlers&&window.webkit.messageHandlers.googleAuth){
+      googlePromise=new Promise(function(resolve,reject){
         window._googleAuthResolve=resolve;
         window._googleAuthReject=function(e){reject(new Error(typeof e==='string'?e:'google sign-in failed'));};
         window.webkit.messageHandlers.googleAuth.postMessage({action:'signIn'});
-      }).then(function(result){
-        var cred=firebase.auth.GoogleAuthProvider.credential(result.idToken,result.accessToken);
-        return firebase.auth().signInWithCredential(cred);
-      }).then(function(authResult){
+      });
+    }
+    if(googlePromise){
+      googlePromise.then(finishGoogleSignIn).then(function(authResult){
         finishAuthSession(authResult);
       }).catch(function(e){
         if(e.code==='auth/account-exists-with-different-credential'){
@@ -5041,7 +5145,12 @@ function App(){
   }
 
   function handleAppleSignIn(){
-    if(isNativeApp&&window.Capacitor&&window.Capacitor.Plugins&&window.Capacitor.Plugins.SignInWithApple){
+    if(isAndroidApp){
+      setAuthError('Apple Sign-In is not available on Android. Please use Google or email instead.');
+      return;
+    }
+    var applePlugin=window.Capacitor&&window.Capacitor.Plugins&&window.Capacitor.Plugins.SignInWithApple;
+    if(isIosApp&&applePlugin&&typeof applePlugin.authorize==='function'){
       var rawNonce=Math.random().toString(36).substring(2,18)+Math.random().toString(36).substring(2,18);
       if(!window.crypto||!window.crypto.subtle){
         setAuthError('apple sign-in is not available on this device');
@@ -5049,7 +5158,7 @@ function App(){
       }
       crypto.subtle.digest('SHA-256',new TextEncoder().encode(rawNonce)).then(function(buf){
         var hashedNonce=Array.from(new Uint8Array(buf)).map(function(b){return b.toString(16).padStart(2,'0');}).join('');
-        return window.Capacitor.Plugins.SignInWithApple.authorize({scopes:'email name',state:rawNonce,nonce:hashedNonce});
+        return applePlugin.authorize({scopes:'email name',state:rawNonce,nonce:hashedNonce});
       }).then(function(result){
         var token=result&&(result.response?result.response.identityToken:result.identityToken);
         if(!token)throw new Error('Apple sign-in did not return a valid token');
@@ -5291,7 +5400,11 @@ function App(){
       setTimeout(finish,1200);
     });
     timed.then(function(){
-      firebase.auth().signOut().then(finishLogout,finishLogout);
+      firebase.auth().signOut().then(function(){
+        clearAndroidGoogleAuthState().then(finishLogout,finishLogout);
+      },function(){
+        clearAndroidGoogleAuthState().then(finishLogout,finishLogout);
+      });
     });
   }
   function finishLogout(){
@@ -5440,7 +5553,7 @@ function App(){
 
   useEffect(function(){
     // Leave as soon as the wheel finishes spinning. Auth can resolve in parallel.
-    var authReady=false,spinReady=false,hidden=false,notLoggedIn=false;
+    var authReady=false,spinReady=false,hidden=false,notLoggedIn=false,androidAuthWait=null;
     function tryHide(){
       if(hidden||!authReady||!spinReady)return;
       hidden=true;
@@ -5458,6 +5571,18 @@ function App(){
     function onSpinDone(){
       if(spinReady)return;
       spinReady=true;
+      if(!authReady&&isAndroidApp&&navigator.onLine!==false){
+        // Android only: a saved login can take a few seconds to restore on a cold start.
+        // Keep the splash up and wait for it instead of showing the login screen too early.
+        androidAuthWait=setTimeout(function(){
+          if(authReady)return;
+          setIsOffline(true);
+          notLoggedIn=true;
+          authReady=true;
+          tryHide();
+        },10000);
+        return;
+      }
       if(!authReady){
         // Firebase auth hasn't resolved — likely offline on cold start.
         setIsOffline(true);
@@ -5481,22 +5606,27 @@ function App(){
     var t=setTimeout(onSpinDone,3200);
     return function(){
       clearTimeout(t);
+      if(androidAuthWait)clearTimeout(androidAuthWait);
       if(ring)ring.removeEventListener('animationend',onAnimEnd);
     };
   },[]);
 
   var RC_PRODUCT_IDS={monthly:'com.passionflowdaily.app.monthly',yearly:'com.passionflowdaily.app.yearly'};
   var RC_ENTITLEMENT='Pro';
+  var RC_IOS_API_KEY='appl_oNdLWEumMbtVAlximyQWMVtNrPb';
+  var RC_ANDROID_API_KEY='goog_BHdtShRphMwFuHMGfkkjeOAGddb';
   var rcConfigurePromise=null;
 
   function getDeviceDiagLabel(){
     var ua=navigator.userAgent||'';
+    var android=ua.match(/Android ([^;]+)/);
+    if(android)return 'Android '+android[1];
     var ios=ua.match(/OS (\d+[_\d]*) like Mac OS X/);
-    return ios?'iOS '+ios[1].replace(/_/g,'.'):'iOS version unknown';
+    return ios?'iOS '+ios[1].replace(/_/g,'.'):'OS version unknown';
   }
 
   function formatRcError(e){
-    if(!e)return 'Unknown StoreKit error';
+    if(!e)return 'Unknown purchase error';
     if(e.userCancelled)return null;
     var parts=[];
     if(e.code)parts.push(String(e.code));
@@ -5511,8 +5641,9 @@ function App(){
     if(!e)return 'Something went wrong. Please try again.';
     if(e.userCancelled)return null;
     var msg=String(e.message||e.errorMessage||'');
-    if(/not loaded|products missing|StoreKit products/i.test(msg)){
-      return 'Subscriptions could not be loaded from the App Store yet. Pull down and reopen the paywall, or try again in a moment.';
+    if(/not loaded|products missing|StoreKit products|Google Play products|Play Billing products/i.test(msg)){
+      if(isAndroidApp)return 'Google Play didn\'t respond, so nothing was charged. Tap Try again in a moment.';
+      return 'Subscriptions could not be loaded from Google Play yet. Pull down and reopen the paywall, or try again in a moment.';
     }
     if(/plugin is not available/i.test(msg)){
       return 'Purchases are not available in this build. Please update the app and try again.';
@@ -5591,7 +5722,12 @@ function App(){
     if(!window.RCPurchases)return Promise.resolve(false);
     if(rcConfigurePromise)return rcConfigurePromise;
     var Purchases=window.RCPurchases.Purchases;
-    rcConfigurePromise=Promise.resolve(Purchases.configure({apiKey:'appl_oNdLWEumMbtVAlximyQWMVtNrPb'})).then(function(){
+    var apiKey=isAndroidApp?RC_ANDROID_API_KEY:RC_IOS_API_KEY;
+    if(!apiKey){
+      console.warn('[RC] '+currentStoreName()+' RevenueCat API key is missing');
+      return Promise.resolve(false);
+    }
+    rcConfigurePromise=Promise.resolve(Purchases.configure({apiKey:apiKey})).then(function(){
       if(window.__PFD_DEBUG__&&window.RCPurchases&&window.RCPurchases.LOG_LEVEL){
         return Purchases.setLogLevel({level:window.RCPurchases.LOG_LEVEL.DEBUG}).catch(function(){return true;});
       }
@@ -5669,7 +5805,7 @@ function App(){
 
   function executeRcPurchase(Purchases,target){
     if(!target||!target.value){
-      throw new Error('StoreKit products are not loaded yet.');
+      throw new Error(currentBillingSystemName()+' products are not loaded yet.');
     }
     if(target.kind==='package'){
       return Purchases.purchasePackage({aPackage:target.value});
@@ -5716,12 +5852,28 @@ function App(){
       var c=rcProductsCacheRef.current;
       var yearlyItem=c.packages.yearly||c.products.yearly;
       var monthlyItem=c.packages.monthly||c.products.monthly;
+      var yearlyStore=rcStoreProduct(yearlyItem);
+      // Android only: does Google Play offer this user a free trial on each plan?
+      // true = yes, false = no (e.g. already used a trial), null = unknown.
+      var trialOf=function(item){
+        var p=rcStoreProduct(item);
+        if(!p)return null;
+        var o=p.defaultOption;
+        if(o)return !!o.freePhase;
+        if(p.introPrice&&Number(p.introPrice.price)===0)return true;
+        return null;
+      };
       setRcPrices({
         yearly:rcProductPriceString(yearlyItem)?('Then '+rcProductPriceString(yearlyItem)+rcProductPeriodLabel(yearlyItem)):null,
-        monthly:rcProductPriceString(monthlyItem)?('Then '+rcProductPriceString(monthlyItem)+rcProductPeriodLabel(monthlyItem)):null
+        monthly:rcProductPriceString(monthlyItem)?('Then '+rcProductPriceString(monthlyItem)+rcProductPeriodLabel(monthlyItem)):null,
+        yearlyRaw:rcProductPriceString(yearlyItem)?(rcProductPriceString(yearlyItem)+'/year'):null,
+        monthlyRaw:rcProductPriceString(monthlyItem)?(rcProductPriceString(monthlyItem)+'/month'):null,
+        yearlyPerMonth:(yearlyStore&&yearlyStore.pricePerMonthString)||null,
+        yearlyTrial:trialOf(yearlyItem),
+        monthlyTrial:trialOf(monthlyItem)
       });
       var ready=!!(c.packages.monthly||c.packages.yearly||c.products.monthly||c.products.yearly);
-      var diag=buildRcStoreDiagLabel(ready?'StoreKit ready':'StoreKit products missing');
+      var diag=buildRcStoreDiagLabel(ready?currentBillingSystemName()+' ready':currentBillingSystemName()+' products missing');
       setRcStoreDiag(diag);
       console.log('[RC] prefetch',diag,rcStoreDiagnostics());
       if(!ready&&retryCount<3){
@@ -5748,6 +5900,29 @@ function App(){
     return prefetchRcStore(0).then(function(){return rcTargetFromCache(plan);});
   }
 
+  function androidStoreUnavailable(){
+    return isAndroidApp&&!rcStoreLoading&&!rcStoreReady&&!purchaseLoading;
+  }
+  function retryAndroidStore(){
+    setPurchaseError('');
+    prefetchRcStore(0);
+  }
+  function showTrialCopy(plan){
+    if(!isAndroidApp)return true;
+    var t=plan==='yearly'?rcPrices.yearlyTrial:rcPrices.monthlyTrial;
+    return t!==false;
+  }
+  function paywallCtaLabel(){
+    if(purchaseLoading)return 'Processing...';
+    if(isAndroidApp&&rcStoreLoading)return 'Connecting to Google Play...';
+    if(androidStoreUnavailable())return 'Try again';
+    if(!showTrialCopy(pricePlan))return 'Subscribe';
+    return 'Start my 3-day free trial';
+  }
+  function paywallCtaAction(){
+    if(androidStoreUnavailable()){retryAndroidStore();return;}
+    startPurchase();
+  }
   function startPurchase(){
     setPurchaseError('');
     if(isNativeApp){
@@ -5759,12 +5934,12 @@ function App(){
         return resolveRcPurchaseTarget(pricePlan);
       }).then(function(target){
         if(!target){
-          throw new Error('StoreKit products are not loaded.');
+          throw new Error(currentBillingSystemName()+' products are not loaded.');
         }
         return executeRcPurchase(Purchases,target);
       }).then(function(result){
         if(!result){
-          throw new Error('Purchase returned no result from StoreKit.');
+          throw new Error('Purchase returned no result from '+currentBillingSystemName()+'.');
         }
         if(rcHasPro(result)){
           return grantProAccess();
@@ -5825,7 +6000,10 @@ function App(){
       setShowPaywall(false);
       if(showOnboard&&obStep>=9&&obStep<=12)return;
     }else if(currentUser&&userLoaded&&!isPro&&!showOnboard&&!showAuth&&!showSplash&&!showLanding){
-      if(isOnboardingBeforePaywall()){
+      if(isAndroidApp&&rcCheckPendingRef.current){
+        // Android only: wait for the RevenueCat Pro check instead of flashing the paywall.
+        // The check itself opens the paywall if the user is not Pro.
+      }else if(isOnboardingBeforePaywall()){
         setShowPaywall(false);
       }else if(shouldShowPaywallGate()||existingAccountRef.current){
         setShowPaywall(true);
@@ -6151,7 +6329,10 @@ function App(){
       <div className="px-5 pb-2" style={{paddingTop:'calc(env(safe-area-inset-top) + 1.25rem)'}}>
         <p className="font-sans text-[10px] font-medium text-body opacity-40 tracking-[0.15em] uppercase mb-2">{dateStr}</p>
         <div className="flex items-center justify-between gap-3 mb-1">
-          <h1 className="font-serif text-[20px] text-headline leading-tight min-w-0 flex-1"><span className="not-italic">Welcome back, </span><span className="italic">{userName}</span><span className="not-italic">. {'\u2728'}</span></h1>
+          <h1 className="font-serif text-[20px] text-headline leading-tight min-w-0 flex-1">
+            <span className="block not-italic">Welcome back,</span>
+            <span className="block italic">{userName}<span className="not-italic"> {'\u2728'}</span></span>
+          </h1>
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-full flex-shrink-0" style={{background:streakBadgeGradient(),border:'1px solid rgba(196,154,122,0.22)',boxShadow:'0 4px 18px rgba(196,154,122,0.12), 0 1px 4px rgba(0,0,0,0.03)'}}>
             <span className="text-[14px]">{'\uD83D\uDD25'}</span>
             <div className="text-right"><p className="font-sans text-[14px] font-bold text-headline leading-none">{streak}</p><p className="font-sans text-[9px] text-headline opacity-60">day streak</p></div>
@@ -6512,7 +6693,7 @@ function App(){
         {/* Account */}
         <div className="sc mb-4">
           <p className="font-sans text-[10px] font-semibold text-body opacity-30 uppercase tracking-[0.12em] mb-3">Account</p>
-          <button onClick={function(){window.open(isNativeApp?'itms-apps://apps.apple.com/account/subscriptions':'https://billing.stripe.com/p/login/3cI5kDaQJgaQ8i5cEkbo400','_blank');}} className="w-full flex items-center justify-between px-3 py-2.5 rounded-[10px] bg-cream mb-2 transition-all active:scale-[0.98]">
+          <button onClick={openManageSubscription} className="w-full flex items-center justify-between px-3 py-2.5 rounded-[10px] bg-cream mb-2 transition-all active:scale-[0.98]">
             <span className="font-sans text-[12px] text-headline">Manage Subscription</span>
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#C49A7A" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 8h10"/><path d="M8 3l5 5-5 5"/></svg>
           </button>
@@ -6650,7 +6831,10 @@ function App(){
           <div className="flex items-center justify-between mb-6">
             <div>
               <p className="font-sans text-[10px] font-medium text-body opacity-40 tracking-[0.15em] uppercase mb-2">{dateStr}</p>
-              <h1 className="font-serif text-[28px] text-headline leading-tight"><span className="not-italic">Welcome back, </span><span className="italic">{userName}</span><span className="not-italic">. {'\u2728'}</span></h1>
+              <h1 className="font-serif text-[28px] text-headline leading-tight">
+                <span className="block not-italic">Welcome back,</span>
+                <span className="block italic">{userName}<span className="not-italic"> {'\u2728'}</span></span>
+              </h1>
               <div className="flex items-center gap-2 mt-1">
                 <p className="font-serif text-[16px] text-body opacity-55 italic">{QUOTES[quoteIdx]}</p>
                 <button onClick={shuffleQuote} className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-white/60 flex-shrink-0">
@@ -6943,7 +7127,7 @@ function App(){
                 {/* Account */}
                 <div className="sc">
                   <p className="font-sans text-[10px] font-semibold text-body opacity-30 uppercase tracking-[0.12em] mb-3">Account</p>
-                  <button onClick={function(){window.open(isNativeApp?'itms-apps://apps.apple.com/account/subscriptions':'https://billing.stripe.com/p/login/3cI5kDaQJgaQ8i5cEkbo400','_blank');}} className="w-full flex items-center justify-between px-3 py-2.5 rounded-[10px] bg-cream mb-2 transition-all hover:bg-accent/5 active:scale-[0.98]">
+                  <button onClick={openManageSubscription} className="w-full flex items-center justify-between px-3 py-2.5 rounded-[10px] bg-cream mb-2 transition-all hover:bg-accent/5 active:scale-[0.98]">
                     <span className="font-sans text-[13px] text-headline">Manage Subscription</span>
                     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#C49A7A" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 8h10"/><path d="M8 3l5 5-5 5"/></svg>
                   </button>
@@ -6999,13 +7183,13 @@ function App(){
       }
       return sheet;
     })()}
-    {/* After closing a day with activity — App Store review (opens write-review, not Settings) */}
+    {/* After closing a day with activity — store review prompt. */}
     {showReviewPrompt&&(function(){
       var sheet=<div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center px-4" style={{background:'rgba(46,28,22,0.42)',backdropFilter:'blur(4px)'}} onClick={function(e){if(e.target===e.currentTarget)handleReviewLater();}}>
         <div className="sheet-up w-full max-w-[380px] rounded-[24px] px-6 pt-6" style={{background:'#FAF6F2',paddingBottom:'max(1.5rem, calc(env(safe-area-inset-bottom, 0px) + 1.25rem))'}} onClick={function(e){e.stopPropagation();}}>
           <p className="text-[28px] text-center mb-2">✨</p>
           <h3 className="font-serif text-[22px] text-headline italic text-center mb-2 leading-snug">If today felt good</h3>
-          <p className="font-sans text-[13px] text-body opacity-55 text-center leading-relaxed mb-6">A short App Store review helps more people find Passion Flow. It takes about a minute.</p>
+          <p className="font-sans text-[13px] text-body opacity-55 text-center leading-relaxed mb-6">A short {currentStoreName()} review helps more people find Passion Flow. It takes about a minute.</p>
           <button onClick={handleReviewLeave} className="w-full font-sans text-[14px] font-semibold text-white py-3.5 rounded-full mb-2 active:scale-[0.98]" style={{background:'#C49A7A'}}>Leave a review</button>
           <button onClick={handleReviewLater} className="w-full font-sans text-[12px] text-body opacity-45 py-2">Not now</button>
         </div>
@@ -7078,10 +7262,10 @@ function App(){
           <p className="font-sans text-[13px] sm:text-[14px] text-body opacity-40 italic mb-8">Stop doom scrolling. Start living intentionally. One meaningful idea at a time.</p>
           <div className="flex items-center justify-center lg:justify-start gap-3 flex-wrap mb-3">
             <button onClick={function(){openAuthFromLanding('signup');}} className="font-sans text-[14px] font-semibold text-white px-8 py-3.5 rounded-full transition-all hover:opacity-90 active:scale-[0.98]" style={{background:'#C49A7A',boxShadow:'0 6px 20px rgba(196,154,122,0.4)'}}>Start my flow</button>
-            <button onClick={function(){alert('App Store coming soon!');}} className="flex items-center gap-2 font-sans text-[12px] font-medium text-body opacity-55 hover:opacity-90 transition-opacity px-4 py-3 rounded-full" style={{border:'1px solid rgba(97,68,51,0.2)',background:'white'}}>
+            {!isAndroidApp&&<button onClick={function(){alert('App Store coming soon!');}} className="flex items-center gap-2 font-sans text-[12px] font-medium text-body opacity-55 hover:opacity-90 transition-opacity px-4 py-3 rounded-full" style={{border:'1px solid rgba(97,68,51,0.2)',background:'white'}}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="#614433"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
               App Store soon
-            </button>
+            </button>}
             <button onClick={function(){alert('Google Play coming soon!');}} className="flex items-center gap-2 font-sans text-[12px] font-medium text-body opacity-55 hover:opacity-90 transition-opacity px-4 py-3 rounded-full" style={{border:'1px solid rgba(97,68,51,0.2)',background:'white'}}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="#614433"><path d="M3.18 23.76c.3.17.64.24.99.2l12.47-7.2-2.79-2.79-10.67 9.79zm-1.14-20.9C1.7 3.3 1.5 3.87 1.5 4.5v15c0 .63.2 1.2.54 1.64l.09.08 8.4-8.4v-.2L2.13 4.77l-.09.09zm18.6 8.03l-2.56-1.48-3.13 3.13 3.13 3.13 2.59-1.5c.74-.43.74-1.35-.03-1.78zM4.17.24L16.64 7.44l-2.79 2.79L3.18.44C3.48.06 3.87-.07 4.17.24z"/></svg>
               Google Play soon
@@ -7940,10 +8124,10 @@ function App(){
           <button onClick={function(){openAuthFromLanding('signup');}} className="font-sans text-[15px] font-semibold text-white px-10 py-4 rounded-full transition-all hover:opacity-90 active:scale-[0.98] mb-4 block mx-auto" style={{background:'#C49A7A',boxShadow:'0 6px 24px rgba(196,154,122,0.4)'}}>Get started</button>
           <button onClick={function(){openAuthFromLanding('login');}} className="font-sans text-[13px] text-body opacity-40 hover:opacity-70 transition-opacity block mx-auto mb-8">Already have an account? Log in</button>
           <div className="flex items-center justify-center gap-3">
-            <button onClick={function(){alert('App Store coming soon!');}} className="flex items-center gap-2 px-4 py-2.5 rounded-full font-sans text-[12px] text-body opacity-50 hover:opacity-80 transition-opacity" style={{border:'1px solid rgba(196,154,122,0.3)'}}>
+            {!isAndroidApp&&<button onClick={function(){alert('App Store coming soon!');}} className="flex items-center gap-2 px-4 py-2.5 rounded-full font-sans text-[12px] text-body opacity-50 hover:opacity-80 transition-opacity" style={{border:'1px solid rgba(196,154,122,0.3)'}}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="#614433"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
               App Store soon
-            </button>
+            </button>}
             <button onClick={function(){alert('Google Play coming soon!');}} className="flex items-center gap-2 px-4 py-2.5 rounded-full font-sans text-[12px] text-body opacity-50 hover:opacity-80 transition-opacity" style={{border:'1px solid rgba(196,154,122,0.3)'}}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="#614433"><path d="M3.18 23.76c.3.17.64.24.99.2l12.47-7.2-2.79-2.79-10.67 9.79zm-1.14-20.9C1.7 3.3 1.5 3.87 1.5 4.5v15c0 .63.2 1.2.54 1.64l.09.08 8.4-8.4v-.2L2.13 4.77l-.09.09zm18.6 8.03l-2.56-1.48-3.13 3.13 3.13 3.13 2.59-1.5c.74-.43.74-1.35-.03-1.78zM4.17.24L16.64 7.44l-2.79 2.79L3.18.44C3.48.06 3.87-.07 4.17.24z"/></svg>
               Google Play soon
@@ -8264,16 +8448,16 @@ function App(){
     {/* Paywall */}
     {showPaywall&&<div className="z-[90] overflow-y-auto" style={{position:'fixed',top:0,right:0,bottom:0,left:0,width:'100%',height:'100dvh',background:shareDayCardGradient()}}>
       <div className="ob-wash-drift" aria-hidden="true"/>
-      <div className="relative z-[1] min-h-[100dvh] flex flex-col items-center justify-start px-6 pb-10" style={{paddingTop:'max(5rem, calc(env(safe-area-inset-top) + 1.5rem))'}}>
+      <div className="pfd-paywall-hero relative z-[1] min-h-[100dvh] flex flex-col items-center justify-start px-6 pb-3">
         <div className="max-w-[440px] w-full text-center ob-fade-up">
 
           {/* Header */}
-          <h1 className="font-sans text-[30px] md:text-[38px] text-headline leading-[1.15] font-bold mb-2 mt-1">Build a life<br/>that feels <span className="font-serif italic text-accent">alive.</span></h1>
-          <p className="font-serif text-[18px] md:text-[22px] text-headline font-bold mb-1">Wake up excited about your life again.</p>
-          <p className="font-serif text-[15px] md:text-[17px] text-accent italic mb-3">Never run out of meaningful ways to live.</p>
+          <h1 className="font-sans text-[26px] md:text-[36px] text-headline leading-[1.1] font-bold mb-1">Build a life<br/>that feels <span className="font-serif italic text-accent">alive.</span></h1>
+          <p className="font-serif text-[16px] md:text-[21px] text-headline font-bold mb-0.5">Wake up excited about your life again.</p>
+          <p className="font-serif text-[14px] md:text-[17px] text-accent italic mb-2">Never run out of meaningful ways to live.</p>
 
           {/* Bullets */}
-          <div className="space-y-2 text-left mb-3 max-w-[360px] mx-auto">
+          <div className="space-y-1.5 text-left mb-2.5 max-w-[360px] mx-auto">
             {[
               {e:'\uD83C\uDF1F',bold:'More personalized ideas like these',light:'plus a new Daily Flow every morning.'},
               {e:'\u2728',bold:'Hundreds of meaningful ideas',light:'for every area of your life.'},
@@ -8284,52 +8468,54 @@ function App(){
               {e:'\uD83D\uDCC8',bold:'Watch your Flow grow',light:'track progress across all five areas.'}
             ].map(function(f,i){
               return <div key={i} className="ob-fade-up flex items-start gap-3" style={{animationDelay:(0.2+i*0.08)+'s'}}>
-                <span className="text-[17px] opacity-70 flex-shrink-0 mt-0.5">{f.e}</span>
+                <span className="text-[15px] opacity-70 flex-shrink-0 mt-0.5">{f.e}</span>
                 <div className="flex-1">
-                  <p className="font-sans text-[13.5px] md:text-[15px] text-headline font-semibold leading-snug">{f.bold}</p>
-                  <p className="font-sans text-[12px] md:text-[13px] text-body opacity-50 leading-snug">{f.light}</p>
+                  <p className="font-sans text-[12.5px] md:text-[15px] text-headline font-semibold leading-snug">{f.bold}</p>
+                  <p className="font-sans text-[11.5px] md:text-[13px] text-body opacity-50 leading-snug">{f.light}</p>
                 </div>
               </div>;
             })}
           </div>
 
-          <p className="font-sans text-[12px] md:text-[13px] text-body opacity-50 mb-3">Try everything free for 3 days. Cancel anytime.</p>
+          <p className="font-sans text-[11.5px] md:text-[13px] text-body opacity-50 mb-2">{showTrialCopy(pricePlan)?'Try everything free for 3 days. Cancel anytime.':'Cancel anytime.'}</p>
 
           {/* Pricing */}
-          <div className="space-y-2.5 mb-3">
+          <div className="space-y-2 mb-2.5">
             {/* Yearly — PRIMARY */}
-            <button onClick={function(){setPricePlan('yearly');}} className="w-full py-5 rounded-[20px] border-2 transition-all relative" style={{background:'white',borderColor:pricePlan==='yearly'?'#C49A7A':'rgba(0,0,0,0.08)',boxShadow:pricePlan==='yearly'?'0 0 24px rgba(196,154,122,0.25), 0 4px 12px rgba(196,154,122,0.08)':'none'}}>
+            <button onClick={function(){setPricePlan('yearly');}} className="w-full py-3.5 rounded-[20px] border-2 transition-all relative" style={{background:'white',borderColor:pricePlan==='yearly'?'#C49A7A':'rgba(0,0,0,0.08)',boxShadow:pricePlan==='yearly'?'0 0 24px rgba(196,154,122,0.25), 0 4px 12px rgba(196,154,122,0.08)':'none'}}>
               <span className="absolute -top-3 left-1/2 -translate-x-1/2 font-sans text-[9px] font-bold text-white px-3.5 py-1 rounded-full tracking-[0.05em] uppercase" style={{background:'#C49A7A',boxShadow:'0 2px 8px rgba(196,154,122,0.4)'}}>Best Value</span>
-              <p className="font-sans text-[18px] md:text-[20px] text-headline font-bold">3 days free</p>
-              <p className="font-sans text-[13px] md:text-[14px] text-headline font-semibold mt-0.5">{rcPrices.yearly||'Then $29.99/year'}</p>
-              <p className="font-sans text-[11px] md:text-[12px] text-body opacity-45 mt-0.5">Just $2.50/month</p>
+              <p className="font-sans text-[17px] md:text-[20px] text-headline font-bold">{showTrialCopy('yearly')?'3 days free':(rcPrices.yearlyRaw||'$29.99/year')}</p>
+              <p className="font-sans text-[12.5px] md:text-[14px] text-headline font-semibold mt-0.5">{showTrialCopy('yearly')?(rcPrices.yearly||'Then $29.99/year'):'Billed yearly'}</p>
+              {isAndroidApp?(rcPrices.yearlyPerMonth&&<p className="font-sans text-[10.5px] md:text-[12px] text-body opacity-45 mt-0.5">{'Just '+rcPrices.yearlyPerMonth+'/month'}</p>):<p className="font-sans text-[10.5px] md:text-[12px] text-body opacity-45 mt-0.5">Just $2.50/month</p>}
             </button>
 
             {/* Monthly — SECONDARY */}
-            <button onClick={function(){setPricePlan('monthly');}} className="w-full py-3.5 rounded-[16px] border-2 transition-all" style={{background:'white',borderColor:pricePlan==='monthly'?'#C49A7A':'rgba(0,0,0,0.08)',boxShadow:pricePlan==='monthly'?'0 0 24px rgba(196,154,122,0.25), 0 4px 12px rgba(196,154,122,0.08)':'none'}}>
-              <p className="font-sans text-[14px] text-headline font-bold">3 days free</p>
-              <p className="font-sans text-[13px] text-headline mt-0.5">{rcPrices.monthly||'Then $4.99/month'}</p>
+            <button onClick={function(){setPricePlan('monthly');}} className="w-full py-2.5 rounded-[16px] border-2 transition-all" style={{background:'white',borderColor:pricePlan==='monthly'?'#C49A7A':'rgba(0,0,0,0.08)',boxShadow:pricePlan==='monthly'?'0 0 24px rgba(196,154,122,0.25), 0 4px 12px rgba(196,154,122,0.08)':'none'}}>
+              <p className="font-sans text-[13px] text-headline font-bold">{showTrialCopy('monthly')?'3 days free':(rcPrices.monthlyRaw||'$4.99/month')}</p>
+              <p className="font-sans text-[12.5px] text-headline mt-0.5">{showTrialCopy('monthly')?(rcPrices.monthly||'Then $4.99/month'):'Billed monthly'}</p>
             </button>
           </div>
 
           {/* Psychological nudge */}
-          <p className="font-serif text-[12px] md:text-[13px] text-body opacity-55 italic mb-2">You've already started. Don't lose your flow.</p>
+          <p className="font-serif text-[11.5px] md:text-[13px] text-body opacity-55 italic mb-1.5">You've already started. Don't lose your flow.</p>
 
           {/* Purchase error / loading */}
-          {rcStoreLoading&&!purchaseError&&<p className="font-sans text-[13px] text-center mb-3 fade-in text-body opacity-50">Connecting to the App Store...</p>}
-          {!rcStoreLoading&&!rcStoreReady&&!purchaseError&&<p className="font-sans text-[13px] text-center mb-3 fade-in" style={{color:'#B34B3D'}}>Subscriptions could not be loaded from the App Store yet. Pull down and reopen the paywall, or try again in a moment.</p>}
+          {rcStoreLoading&&!purchaseError&&<p className="font-sans text-[13px] text-center mb-3 fade-in text-body opacity-50">Connecting to Google Play...</p>}
+          {!rcStoreLoading&&!rcStoreReady&&!purchaseError&&<p className="font-sans text-[13px] text-center mb-3 fade-in" style={{color:'#B34B3D'}}>{isAndroidApp?'We couldn\'t reach Google Play. Check your connection, then tap Try again.':'Subscriptions could not be loaded from Google Play yet. Pull down and reopen the paywall, or try again in a moment.'}</p>}
           {purchaseError&&<p className="font-sans text-[13px] text-center mb-3 fade-in" style={{color:'#B34B3D'}}>{purchaseError}</p>}
 
-          {/* CTA */}
-          <button onClick={startPurchase} disabled={purchaseLoading} className="w-full font-sans text-[15px] md:text-[16px] font-bold text-white py-4 rounded-full active:scale-[0.98] transition-all"
-            style={{background:purchaseLoading?'rgba(196,154,122,0.6)':'#C49A7A',boxShadow:'0 6px 20px rgba(196,154,122,0.35)'}}>
-            {purchaseLoading?'Processing...':'Start my 3-day free trial'}
-          </button>
+          <div className="pfd-paywall-cta">
+            {/* CTA */}
+            <button onClick={isAndroidApp?paywallCtaAction:startPurchase} disabled={purchaseLoading||(isAndroidApp&&rcStoreLoading)} className="w-full font-sans text-[15px] md:text-[16px] font-bold text-white py-3.5 rounded-full active:scale-[0.98] transition-all"
+              style={{background:(purchaseLoading||(isAndroidApp&&rcStoreLoading))?'rgba(196,154,122,0.6)':'#C49A7A',boxShadow:'0 6px 20px rgba(196,154,122,0.35)'}}>
+              {isAndroidApp?paywallCtaLabel():(purchaseLoading?'Processing...':'Start my 3-day free trial')}
+            </button>
 
-          {/* Subscription terms — required by App Store guideline 3.1.2 */}
-          <p className="font-sans text-[11px] text-body opacity-40 mt-2 leading-relaxed max-w-[320px] mx-auto">
-            3-day free trial, then renews at the selected plan unless canceled at least 24 hours before the trial ends.
-          </p>
+            {/* Subscription renewal terms. */}
+            <p className="font-sans text-[10px] text-body opacity-40 mt-1.5 leading-snug max-w-[320px] mx-auto">
+              {showTrialCopy(pricePlan)?'3-day free trial, then renews at the selected plan unless canceled at least 24 hours before the trial ends.':'Renews automatically at the selected plan until canceled. Cancel anytime in Google Play.'}
+            </p>
+          </div>
 
           {/* With / without */}
           <div className="mt-8 pt-6" style={{borderTop:'1px solid rgba(196,154,122,0.18)'}}>
@@ -8360,11 +8546,11 @@ function App(){
               </div>
             </div>
 
-            <button onClick={startPurchase} disabled={purchaseLoading} className="w-full font-sans text-[15px] font-bold text-white py-4 rounded-full active:scale-[0.98] transition-all mt-5"
-              style={{background:purchaseLoading?'rgba(196,154,122,0.6)':'#C49A7A',boxShadow:'0 6px 20px rgba(196,154,122,0.35)'}}>
-              {purchaseLoading?'Processing...':'Start my 3-day free trial'}
+            <button onClick={isAndroidApp?paywallCtaAction:startPurchase} disabled={purchaseLoading||(isAndroidApp&&rcStoreLoading)} className="w-full font-sans text-[15px] font-bold text-white py-4 rounded-full active:scale-[0.98] transition-all mt-5"
+              style={{background:(purchaseLoading||(isAndroidApp&&rcStoreLoading))?'rgba(196,154,122,0.6)':'#C49A7A',boxShadow:'0 6px 20px rgba(196,154,122,0.35)'}}>
+              {isAndroidApp?paywallCtaLabel():(purchaseLoading?'Processing...':'Start my 3-day free trial')}
             </button>
-            <p className="font-sans text-[11px] text-body opacity-40 mt-2">3 days free, then {pricePlan==='yearly'?'$29.99/year':'$4.99/month'}. Cancel anytime.</p>
+            <p className="font-sans text-[11px] text-body opacity-40 mt-2">{showTrialCopy(pricePlan)?'3 days free, then ':''}{pricePlan==='yearly'?((isAndroidApp&&rcPrices.yearlyRaw)||'$29.99/year'):((isAndroidApp&&rcPrices.monthlyRaw)||'$4.99/month')}. Cancel anytime.</p>
           </div>
 
           <button onClick={function(){setShowPaywall(false);setShowOnboard(false);setShowAuth(true);setAuthMode('login');}} className="font-sans text-[13px] text-body opacity-50 hover:opacity-80 mt-5 transition-opacity block mx-auto">Already have an account? <span className="underline underline-offset-2">Sign in</span></button>
@@ -8382,7 +8568,7 @@ function App(){
                     return grantProAccess().then(function(){setRestoreState('success');});
                   }
                   setRestoreState('success');
-                  setPurchaseError('No active subscription was found to restore for this Apple ID.');
+                  setPurchaseError('No active subscription was found to restore for this '+(isAndroidApp?'Google Play account':'Apple ID')+'.');
                 }).catch(function(e){
                   logRcError('restore',e);
                   setRestoreState('success');
@@ -8417,7 +8603,7 @@ function App(){
           {[
             {t:'1. Overview',b:'Welcome to Passion Flow Daily ("the App"). By downloading, installing, or using the App, you agree to these Terms of Service. Passion Flow Daily is a lifestyle app designed to help you bring balance to your day through guided daily actions across five areas: Create, Mindset, Connect, Move, and Reset. The App is operated by Flow Innovations ("we," "us," or "our").'},
             {t:'2. Eligibility',b:'You must be at least 13 years old to use this App.'},
-            {t:'3. Subscriptions & Billing',b:'Passion Flow Daily offers auto-renewing subscriptions.\n\n• Monthly: $4.99 / month\n• Yearly: $29.99 / year\n\nPayment is charged to your Apple ID account at confirmation. Subscriptions auto-renew unless turned off at least 24 hours before the end of the current period. You can manage your subscription in your Apple ID account settings.'},
+            {t:'3. Subscriptions & Billing',b:isAndroidApp?'Passion Flow Daily offers auto-renewing subscriptions.\n\n• Monthly: $4.99 / month\n• Yearly: $29.99 / year\n\nPayment is charged to your Google Play account at confirmation. Subscriptions auto-renew unless canceled at least 24 hours before the end of the current period. You can manage or cancel your subscription in Google Play.':'Passion Flow Daily offers auto-renewing subscriptions.\n\n• Monthly: $4.99 / month\n• Yearly: $29.99 / year\n\nPayment is charged to your Apple ID account at confirmation. Subscriptions auto-renew unless turned off at least 24 hours before the end of the current period. You can manage your subscription in your Apple ID account settings.'},
             {t:'4. Restore Purchases',b:'If you have previously subscribed and reinstall the App or switch devices, you can restore your subscription using the "Restore" option.'},
             {t:'5. User Content',b:'You may create reflections, journal entries, voice memos, and saved ideas. You retain full ownership of your content.'},
             {t:'6. Acceptable Use',b:'You agree not to misuse the App, reverse-engineer it, or use it for unlawful or harmful purposes.'},
@@ -8454,13 +8640,13 @@ function App(){
           {[
             {t:'1. Overview',b:'Your privacy matters. This Privacy Policy explains how Passion Flow Daily ("the App"), operated by Flow Innovations, collects, uses, and protects your information.'},
             {t:'2. Information You Provide',b:'You may choose to provide:\n\n• Reflections and journal entries\n• Voice memos\n• Saved ideas and completed activities\n• Onboarding responses and preferences\n• Display name (if set in Settings)\n\nThis information personalizes your experience.'},
-            {t:'3. Usage & Analytics Data',b:'We may collect limited, non-identifying information:\n\n• App interactions and feature usage\n• Crash reports and performance data\n• Device type, iOS version, language\n• General diagnostic information'},
-            {t:'4. How We Use Your Data',b:'We use your information to provide App features, personalize your experience, process subscription purchases via Apple, improve the App, and respond to support requests.'},
-            {t:'5. Data Storage & Security',b:'Your content may be stored locally on your device or on trusted third-party cloud services (such as Apple iCloud, if enabled). We use industry-standard safeguards, but no method of storage is 100% secure.'},
-            {t:'6. Sharing of Information',b:'We do not sell your personal information. We may share limited data only with:\n\n• Service providers (analytics, cloud storage, crash reporting)\n• Apple (for subscription processing)\n• Law enforcement, if legally required'},
-            {t:'7. Your Choices & Rights',b:'You can edit or delete your content in the App, cancel your subscription in Apple ID settings, uninstall the App, or request data deletion by contacting passionflow.studio@gmail.com. Depending on your region (e.g., EU, California), you may have additional rights under GDPR or CCPA.'},
+            {t:'3. Usage & Analytics Data',b:'We may collect limited, non-identifying information:\n\n• App interactions and feature usage\n• Crash reports and performance data\n• Device type, OS version, language\n• General diagnostic information'},
+            {t:'4. How We Use Your Data',b:'We use your information to provide App features, personalize your experience, process subscription purchases through the applicable app store, improve the App, and respond to support requests.'},
+            {t:'5. Data Storage & Security',b:'Your content may be stored locally on your device or on trusted third-party cloud services. We use industry-standard safeguards, but no method of storage is 100% secure.'},
+            {t:'6. Sharing of Information',b:'We do not sell your personal information. We may share limited data only with:\n\n• Service providers (analytics, cloud storage, crash reporting)\n• Apple or Google Play (for subscription processing)\n• Law enforcement, if legally required'},
+            {t:'7. Your Choices & Rights',b:'You can edit or delete your content in the App, cancel your subscription in your app store account settings, uninstall the App, or request data deletion by contacting passionflow.studio@gmail.com. Depending on your region (e.g., EU, California), you may have additional rights under GDPR or CCPA.'},
             {t:"8. Children's Privacy",b:'Passion Flow Daily is not intended for children under 13. We do not knowingly collect personal information from anyone under 13.'},
-            {t:'9. Third-Party Services',b:"The App may use third-party services (such as Apple's StoreKit, analytics, or crash reporting). These providers have their own privacy policies."},
+            {t:'9. Third-Party Services',b:'The App may use third-party services such as app store billing, analytics, or crash reporting. These providers have their own privacy policies.'},
             {t:'10. International Users',b:"If you're using the App outside the United States, your information may be processed in the United States or other countries where our service providers operate."},
             {t:'11. Changes to This Policy',b:'We may update this policy. The most current version is always available at https://www.passionflowdaily.com/privacy.'},
             {t:'12. Contact',b:'passionflow.studio@gmail.com\nFlow Innovations\nwww.passionflowdaily.com'}
@@ -8499,10 +8685,10 @@ function App(){
         <h1 className="font-serif text-[32px] text-headline text-center mb-2">{authMode==='signup'?React.createElement(React.Fragment,null,'continue with',React.createElement('br',null),'passion flow daily ✨'):'welcome back'}</h1>
         <p className="font-sans text-[14px] text-body text-center mb-8 opacity-70">{authMode==='signup'?'Save your flows, progress, and reflections.':'log in to continue your flow'}</p>
 
-        <button onClick={handleAppleSignIn} className="w-full font-sans text-[14px] font-semibold text-white py-3.5 mb-3 rounded-full flex items-center justify-center gap-2 active:scale-[0.98]" style={{background:'#111'}}>
+        {!isAndroidApp&&<button onClick={handleAppleSignIn} className="w-full font-sans text-[14px] font-semibold text-white py-3.5 mb-3 rounded-full flex items-center justify-center gap-2 active:scale-[0.98]" style={{background:'#111'}}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/></svg>
           continue with apple
-        </button>
+        </button>}
 
         <button onClick={handleGoogleSignIn} className="w-full font-sans text-[14px] font-semibold text-headline bg-white py-3.5 mb-5 rounded-full flex items-center justify-center gap-2 border border-black/5 active:scale-[0.98]">
           <svg width="16" height="16" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.1H42V20H24v8h11.3c-1.6 4.7-6.1 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.6-.4-3.9z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.9 1.2 8 3l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2c-2 1.5-4.5 2.4-7.2 2.4-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.1H42V20H24v8h11.3c-.8 2.3-2.3 4.3-4.2 5.6l6.2 5.2C40.9 35.6 44 30.3 44 24c0-1.3-.1-2.6-.4-3.9z"/></svg>
@@ -8574,8 +8760,8 @@ function App(){
     {showPersonalizationPayoff&&payoffPreviewPlan&&(function(){
       var copy=buildDeepPayoffCopy(personalizationProfile);
       var sheet=<div className="fixed inset-0 z-[220] flex items-center justify-center px-3" style={{background:'rgba(46,28,22,0.42)',backdropFilter:'blur(6px)',paddingTop:'max(8px, env(safe-area-inset-top, 0px))',paddingBottom:'max(8px, env(safe-area-inset-bottom, 0px))'}}>
-        <div className="pfd-payoff-sheet ob-payoff-stack w-full max-w-[400px] rounded-[28px] px-5 pt-3 overflow-hidden" style={{background:'#FAF6F2',boxShadow:'0 16px 48px rgba(0,0,0,0.2)'}} onClick={function(e){e.stopPropagation();}}>
-          <div className="flex-shrink-0 text-center px-1">
+        <div className="pfd-payoff-sheet ob-payoff-static ob-payoff-stack w-full max-w-[400px] rounded-[28px] px-5 pt-3 overflow-hidden" style={{background:'#FAF6F2',boxShadow:'0 16px 48px rgba(0,0,0,0.2)'}} onClick={function(e){e.stopPropagation();}}>
+          <div className="ob-payoff-header text-center px-1">
             <p className="text-[20px] mb-0.5">{'\u2728'}</p>
             <p className="font-serif text-[20px] text-headline italic mb-1 leading-snug">{copy.title}</p>
             <p className="font-sans text-[12px] text-headline mb-2 leading-snug">{copy.subtitle}</p>
@@ -8589,13 +8775,11 @@ function App(){
                 <div className="w-[36px] h-[36px] rounded-[12px] flex items-center justify-center flex-shrink-0 text-[18px]" style={{background:cardPickGradient(c.id),boxShadow:'0 2px 8px rgba(0,0,0,0.12)'}}>{c.emoji}</div>
                 <div className="flex-1 min-h-0 min-w-0 flex flex-col justify-center overflow-hidden">
                   <p className="font-sans text-[10px] font-semibold text-body opacity-50 mb-0.5 flex-shrink-0">{c.title}</p>
-                  <div className="min-h-0 overflow-y-auto" style={{WebkitOverflowScrolling:'touch',overscrollBehavior:'contain',maxHeight:'100%'}}>
-                    <p key={item.ideaId||item.title} className="font-sans text-[13px] text-headline leading-snug">{item.title}</p>
-                  </div>
+                  <p key={item.ideaId||item.title} className="ob-payoff-copy font-sans text-[13px] text-headline leading-snug">{item.title}</p>
                 </div>
-                {shufflesLeft>0&&<button type="button" onClick={function(){shufflePayoffPreviewCategory(c.id);}} className="flex-shrink-0 w-[34px] h-[34px] rounded-full flex items-center justify-center active:scale-[0.92] transition-transform" style={{background:'rgba(255,255,255,0.78)',border:'1px solid '+c.borderColor,color:'#614433'}} aria-label={'Shuffle '+c.title}>
+                <button type="button" disabled={shufflesLeft<=0} onClick={function(){if(shufflesLeft>0)shufflePayoffPreviewCategory(c.id);}} className={'flex-shrink-0 w-[34px] h-[34px] rounded-full flex items-center justify-center active:scale-[0.92] transition-transform '+(shufflesLeft>0?'':(isAndroidApp?'opacity-30 pointer-events-none':'invisible pointer-events-none'))} style={{background:'rgba(255,255,255,0.78)',border:'1px solid '+c.borderColor,color:'#614433'}} aria-label={'Shuffle '+c.title} aria-hidden={shufflesLeft<=0&&!isAndroidApp}>
                   <ShuffleIcon/>
-                </button>}
+                </button>
               </div>;
             })}
           </div>
@@ -8642,7 +8826,7 @@ function App(){
           setPickCategoryId(null);
         }
       }}>
-        <div className="w-full max-w-[400px] rounded-[24px] p-6 sheet-up max-h-[85vh] flex flex-col overflow-hidden" style={{background:'#FAF6F2',boxShadow:'0 12px 40px rgba(0,0,0,0.18)'}} onClick={function(e){e.stopPropagation();}}>
+        <div className="w-full max-w-[400px] rounded-[24px] p-5 sheet-up max-h-[92dvh] flex flex-col overflow-hidden" style={{background:'#FAF6F2',boxShadow:'0 12px 40px rgba(0,0,0,0.18)'}} onClick={function(e){e.stopPropagation();}}>
           {renderDeepPersonalizationScreen()}
         </div>
       </div>;
@@ -8695,8 +8879,8 @@ function App(){
     </div>}
 
     {/* Pick My Daily Flow sheet */}
-    {planMyDayResult&&<div className="fixed inset-0 z-[91] flex items-end justify-center" style={{background:'rgba(0,0,0,0.3)'}} onClick={function(e){if(e.target===e.currentTarget)closePlanMyDaySheet();}}>
-      <div className="w-full max-w-[500px] rounded-t-[28px] sheet-up sheet-panel" style={{background:'#FAF6F2'}} onClick={function(e){e.stopPropagation();}}>
+    {planMyDayResult&&<div className="fixed inset-0 z-[110] flex items-end justify-center" style={{background:'rgba(0,0,0,0.3)'}} onClick={function(e){if(e.target===e.currentTarget)closePlanMyDaySheet();}}>
+      <div className="w-full max-w-[500px] rounded-t-[28px] sheet-up sheet-panel daily-flow-sheet" style={{background:'#FAF6F2'}} onClick={function(e){e.stopPropagation();}}>
         <div className="flex-shrink-0 px-5 pt-4 pb-2">
           <div className="w-10 h-[4px] rounded-full mx-auto mb-3" style={{background:'rgba(97,68,51,0.18)'}}/>
           <div className="flex items-start justify-between gap-3">

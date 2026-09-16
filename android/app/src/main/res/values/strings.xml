@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Passion Flow Daily</string>
+    <string name="title_activity_main">Passion Flow Daily</string>
+    <string name="package_name">com.passionflowdaily.app</string>
+    <string name="custom_url_scheme">com.passionflowdaily.app</string>
+</resources>

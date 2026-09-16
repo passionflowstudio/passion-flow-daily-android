@@ -10,6 +10,20 @@ firebase-adminsdk*.json
 # Dependencies
 node_modules/
 
+# Android local build/signing outputs
+android-signing/
+android/local.properties
+.gradle-home/
+.android-home/
+.home/
+.npm-cache/
+.toolchains/
+*.aab
+*.apk
+*.jks
+*.keystore
+android/.idea/
+
 # iOS build artifacts
 build/
 ios/App/build/
