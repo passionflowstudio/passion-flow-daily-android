@@ -1646,7 +1646,7 @@ function BalanceWheel(p){
   var emptyCards=hideEmptyLabels?CARDS.filter(function(c){return !(sess[c.id]||0);}):[];
   var insight=total===0?'Start exploring to build your balance':
     balancePct>=80?'You are beautifully balanced this week':
-    balancePct>=50?minCard.emoji+' Your '+minCard.title+' area could use a little love':
+    balancePct>=50?((onAndroid&&CARDS.filter(function(c){return (sess[c.id]||0)===(sess[minCard.id]||0);}).length>1)?'A few areas could use a little love this week':minCard.emoji+' Your '+minCard.title+' area could use a little love'):
     'Every area you explore grows your balance';
   return <div>
     <svg viewBox="-85 -25 490 385" className="mx-auto block" style={{width:'100%',maxWidth:'500px',height:'auto'}}>
@@ -1802,6 +1802,12 @@ function pfdIsAndroidUi(){
 var DETAIL_SHORT_ONLY=/five minutes|few minutes|short burst|keep it small|right now/i;
 var DETAIL_NOT_BIG=/\bsmall\b|do not have to do a lot|simplest/i;
 var DETAIL_LONG_ONLY=/longer than feels comfortable/i;
+var DETAIL_STEPS_OUTDOOR=[
+  ['Check the weather and wear something comfortable for being outside.','Bring water and put your phone on do not disturb.','Slow down at least once and take in where you are.'],
+  ['Pick the spot before you head out so you do not lose time deciding.','Tell someone where you are going if it is somewhere new.','Notice one thing you have never noticed before.'],
+  ['Wear shoes that fit what you are doing.','Leave the headphones off for part of it and listen to what is around you.','Take a moment at the end to notice how you feel.'],
+  ['Head out while you still have good daylight.','Go at a pace that feels good, not rushed.','Capture one moment you want to remember.']
+];
 var DETAIL_WHY_LONG=[
   'Big, unhurried experiences give you a reset and memories that a regular day rarely can.',
   'Giving something real time is how it stops being a task and becomes an experience.',
@@ -1844,7 +1850,12 @@ function IdeaDetailSheet(p){
   var hi=hashN(idea.text,4);
   var why=pickDetailVariant(DETAIL_WHY[vb]||DETAIL_WHY.Easy,hi,tm,DETAIL_WHY_LONG);
   var steps=pickDetailVariant(DETAIL_STEPS[vb]||DETAIL_STEPS.Easy,hi,tm,DETAIL_STEPS_LONG);
+  var androidUi=pfdIsAndroidUi();
+  if(androidUi&&wh==='Outdoors'&&tm!=='2h+'&&['Active','Relaxing','Mindful','Easy'].indexOf(vb)>=0){
+    steps=DETAIL_STEPS_OUTDOOR[hi%DETAIL_STEPS_OUTDOOR.length];
+  }
   var SUBS=['A moment worth choosing today.','Small but meaningful.','This one is worth it.','Exactly what you need right now.'];
+  if(androidUi&&(tm==='1h'||tm==='2h+'))SUBS=['A moment worth choosing today.','This one is worth it.','Worth making real time for.'];
   var sub=SUBS[hashN(idea.text,SUBS.length)];
   var sheet=<div className="fixed inset-0 z-[100] flex items-end justify-center" style={{background:'rgba(0,0,0,0.3)'}} onClick={function(e){if(e.target===e.currentTarget)p.onClose();}}>
     <div className="w-full max-w-[500px] rounded-t-[32px] border-t border-x fade-in sheet-panel" style={{background:card.color,borderColor:card.borderColor,boxShadow:'0 -8px 40px rgba(0,0,0,0.15)'}}>
@@ -3465,7 +3476,7 @@ function App(){
     Object.keys(plan).forEach(function(cat){
       composed[cat]=composeRecommendation(plan[cat],profile,cat,cat==='create'?true:undefined);
     });
-    return composed;
+    return dedupeComposedPlan(composed,profile);
   }
   function buildOnboardingPayoffCopy(profile,wasSkipped){
     var shuffleLine='Shuffle for a new idea.';
@@ -3594,7 +3605,7 @@ function App(){
         if(excludeIds.indexOf(oid)<0)excludeIds.push(oid);
       }
     });
-    var idea=pickAnotherIdea(categoryId,excludeIds,[],currentIdea);
+    var idea=pickAnotherIdeaNoClash(categoryId,payoffPreviewPlan,excludeIds,[],currentIdea);
     if(!idea)return;
     var composed=composeRecommendation(idea,personalizationProfile,categoryId,categoryId==='create'?(!createComposedIsNamed(item)):undefined);
     if(!composed||!composed.title)return;
@@ -3615,7 +3626,29 @@ function App(){
     });
     trackEvent('personalization_payoff_shuffle',{category:categoryId,count:used+1});
   }
+  function usePreviewAsDailyFlow(preview){
+    if(!planMyDayResult)planAddedThisSessionRef.current=false;
+    setOpenCard(null);
+    var today=getLocalDayKey();
+    var plan=Object.assign({},preview);
+    setPlanShownIds(emptyPlanSessionTracking());
+    setPlanShownThemes(emptyPlanSessionTracking());
+    Object.keys(plan).forEach(function(cat){
+      if(plan[cat])recordPlanCategoryShown(cat,plan[cat].ideaId,plan[cat]);
+    });
+    setPlanMyDayCache(plan);
+    setPlanMyDayDayKey(today);
+    setPlanMyDayResult(plan);
+    setBehaviorSignals(function(prev){
+      var n=normalizeBehaviorSignals(prev);
+      n.pickForMeDayKey=today;
+      return n;
+    });
+    markPlanDayUsed(currentUser&&currentUser.uid);
+    trackEvent('plan_my_day_shown',{reshuffle:false,from_preview:true});
+  }
   function dismissPersonalizationPayoff(){
+    var previewForPlan=payoffPreviewPlan;
     setShowPersonalizationPayoff(false);
     setPayoffPreviewPlan(null);
     var action=pendingRecAction;
@@ -3634,7 +3667,10 @@ function App(){
     switchMobileTab('flow',false);
     switchDesktopTab('flow',false);
     if(action==='pick')executePickForMe(cat,personalizationProfile);
-    else if(action==='plan')executePlanMyDay(personalizationProfile,true);
+    else if(action==='plan'){
+      if(isAndroidApp&&previewForPlan&&CARDS.some(function(c){return previewForPlan[c.id];}))usePreviewAsDailyFlow(previewForPlan);
+      else executePlanMyDay(personalizationProfile,true);
+    }
   }
   function isExistingUserForPersonalization(){
     return !!(existingAccountRef.current||(logsData&&logsData.length>0)||(obAnswers&&obAnswers.q1));
@@ -3778,6 +3814,71 @@ function App(){
     });
     return true;
   }
+  var PFD_ACTIVITY_THEMES=[
+    ['water',/\b(swim|swimming|float|waterfall|swimming hole|lake|ocean|beach|kayak|paddle)\b/i],
+    ['hike',/\b(hike|hiking|trail)\b/i],
+    ['bike',/\b(bike|biking|cycling|cycle)\b/i],
+    ['run',/\b(running|jog|jogging|go for a run|a run)\b/i],
+    ['picnic',/\bpicnic\b/i],
+    ['museum',/\b(museum|gallery)\b/i]
+  ];
+  function pfdActivityThemes(text){
+    var t=String(text||'');
+    return PFD_ACTIVITY_THEMES.filter(function(p){return p[1].test(t);}).map(function(p){return p[0];});
+  }
+  function pfdItemText(item){return item?(item.sourceText||item.title||item.text||''):'';}
+  function pfdThemesTaken(plan,skipCat){
+    var taken=[];
+    Object.keys(plan||{}).forEach(function(cat){
+      if(cat===skipCat||!plan[cat])return;
+      pfdActivityThemes(pfdItemText(plan[cat])).forEach(function(k){if(taken.indexOf(k)<0)taken.push(k);});
+    });
+    return taken;
+  }
+  function pfdClashes(text,taken){
+    return pfdActivityThemes(text).some(function(k){return taken.indexOf(k)>=0;});
+  }
+  // Android only: pick another idea for a category that doesn't repeat another card's activity.
+  function pickAnotherIdeaNoClash(categoryId,plan,excludeIds,excludeThemes,currentIdea){
+    var first=pickAnotherIdea(categoryId,excludeIds,excludeThemes,currentIdea);
+    if(!isAndroidApp||!first)return first;
+    var taken=pfdThemesTaken(plan,categoryId);
+    if(!taken.length||!pfdClashes(first.text,taken))return first;
+    var ex=excludeIds.slice();
+    var candidate=first;
+    for(var i=0;i<6;i++){
+      if(candidate&&candidate.id&&ex.indexOf(candidate.id)<0)ex.push(candidate.id);
+      candidate=pickAnotherIdea(categoryId,ex,excludeThemes,currentIdea);
+      if(candidate&&!pfdClashes(candidate.text,taken))return candidate;
+    }
+    return first;
+  }
+  // Android only: swap out later cards that repeat an earlier card's activity.
+  function dedupeComposedPlan(composed,profile){
+    if(!isAndroidApp||!composed)return composed;
+    var order=CARDS.map(function(c){return c.id;}).filter(function(id){return composed[id];});
+    var ids=order.map(function(id){return composed[id].ideaId;}).filter(Boolean);
+    order.forEach(function(cat,idx){
+      if(idx===0)return;
+      var before={};
+      order.slice(0,idx).forEach(function(c){before[c]=composed[c];});
+      var taken=pfdThemesTaken(before,null);
+      var item=composed[cat];
+      if(!taken.length||!pfdClashes(pfdItemText(item),taken))return;
+      var current={id:item.ideaId,text:pfdItemText(item)};
+      var ex=ids.slice();
+      for(var i=0;i<6;i++){
+        var idea=pickAnotherIdea(cat,ex,[],current);
+        if(!idea)break;
+        if(idea.id&&ex.indexOf(idea.id)<0)ex.push(idea.id);
+        if(pfdClashes(idea.text,taken))continue;
+        var next=composeRecommendation(idea,profile,cat,cat==='create'?createComposedIsNamed(item):undefined);
+        if(next&&next.title){composed[cat]=next;ids.push(idea.id);}
+        break;
+      }
+    });
+    return composed;
+  }
   function pickAnotherIdea(categoryId,excludeIds,excludeThemes,currentIdea){
     var prof=personalizationProfile;
     var currentId=currentIdea&&currentIdea.id;
@@ -3888,7 +3989,7 @@ function App(){
     return <div className="mt-2 space-y-1.5">{idxs.map(function(i){return <input key={field+'-'+i} type="text" value={((pp[field]||[])[i])||''} onChange={function(e){setProfileNameAt(field,i,e.target.value);}} placeholder={placeholders[i]} className={inputCls} style={inputStyle}/>;})}<p className="font-sans text-[10px] text-body opacity-40 text-left">{label}</p></div>;
   }
   function renderEverydayLifeFields(pp,compact){
-    var chipStyle=function(sel){return {background:sel?'rgba(196,154,122,0.15)':'white',borderColor:sel?'#C49A7A':'rgba(0,0,0,0.08)',color:sel?'#C49A7A':'#2E1C16'};};
+    var chipStyle=function(sel){return {background:sel?'rgba(196,154,122,0.15)':'white',borderColor:sel?'#C49A7A':'rgba(0,0,0,0.08)',color:sel?(isAndroidApp?'#7A4E33':'#C49A7A'):'#2E1C16'};};
     var pad=compact?'px-2.5 py-2':'px-3 py-2.5';
     var gap=compact?'space-y-3':'space-y-5';
     var labelMb=compact?'mb-1.5':'mb-2.5';
@@ -4075,6 +4176,7 @@ function App(){
     Object.keys(plan).forEach(function(cat){
       composed[cat]=composeRecommendation(plan[cat],prof,cat,cat==='create'?namedCreate:undefined);
     });
+    composed=dedupeComposedPlan(composed,prof);
     if(forceShuffle||planMyDayDayKey!==today){
       setPlanShownIds(emptyPlanSessionTracking());
       setPlanShownThemes(emptyPlanSessionTracking());
@@ -4133,7 +4235,7 @@ function App(){
     var excludeThemes=(planShownThemes[categoryId]||[]).slice();
     if(item&&item.theme&&excludeThemes.indexOf(item.theme)<0)excludeThemes.push(item.theme);
     if(item&&item.family&&item.family!=='generic'&&excludeThemes.indexOf(item.family)<0)excludeThemes.push(item.family);
-    var idea=pickAnotherIdea(categoryId,excludeIds,excludeThemes,currentIdea);
+    var idea=pickAnotherIdeaNoClash(categoryId,planMyDayResult,excludeIds,excludeThemes,currentIdea);
     if(!idea)return;
     var prof=personalizationProfile;
     var composed=composeRecommendation(idea,prof,categoryId,categoryId==='create'?(!createComposedIsNamed(item)):undefined);
@@ -4165,7 +4267,7 @@ function App(){
         if(excludeIds.indexOf(oid)<0)excludeIds.push(oid);
       }
     });
-    var idea=pickAnotherIdea(categoryId,excludeIds,[],currentIdea);
+    var idea=pickAnotherIdeaNoClash(categoryId,onboardingPayoffPlan,excludeIds,[],currentIdea);
     if(!idea)return;
     var composed=composeRecommendation(idea,personalizationProfile,categoryId,categoryId==='create'?(!createComposedIsNamed(item)):undefined);
     if(!composed||!composed.title)return;
@@ -4282,7 +4384,7 @@ function App(){
   }
   function renderPersonalizationFields(compact){
     var chipCls='font-sans text-[12px] px-4 py-2 rounded-full border transition-all active:scale-[0.95]';
-    var chipStyle=function(sel){return {background:sel?'rgba(196,154,122,0.15)':'white',borderColor:sel?'#C49A7A':'rgba(0,0,0,0.08)',color:sel?'#C49A7A':'#614433'};};
+    var chipStyle=function(sel){return {background:sel?'rgba(196,154,122,0.15)':'white',borderColor:sel?'#C49A7A':'rgba(0,0,0,0.08)',color:sel?(isAndroidApp?'#7A4E33':'#C49A7A'):'#614433'};};
     var pp=personalizationProfile;
     return <div>
       <div className="mb-4">
@@ -4378,7 +4480,7 @@ function App(){
   function renderDeepPersonalizationBody(){
     var pp=personalizationProfile;
     var chipCls='font-sans text-[13px] px-3 py-2 rounded-full border transition-all active:scale-[0.95]';
-    var chipStyle=function(sel){return {background:sel?'rgba(196,154,122,0.15)':'white',borderColor:sel?'#C49A7A':'rgba(0,0,0,0.08)',color:sel?'#C49A7A':'#2E1C16'};};
+    var chipStyle=function(sel){return {background:sel?'rgba(196,154,122,0.15)':'white',borderColor:sel?'#C49A7A':'rgba(0,0,0,0.08)',color:sel?(isAndroidApp?'#7A4E33':'#C49A7A'):'#2E1C16'};};
     var LAYER2_TOTAL=8;
     var buildingFollowUp=(pp.createInterests||[]).indexOf('building_business')>=0?<div className="mt-3 max-w-[300px] mx-auto text-left"><p className="font-sans text-[11px] text-body opacity-50 mb-2">What are you building? (optional)</p><div className="flex flex-wrap gap-2 justify-center mb-2">{CREATE_BUILDING_TYPES.map(function(opt){var sel=pp.createBuildingType===opt.id;return <button key={opt.id} onClick={function(){setPersonalizationProfile(function(p){return Object.assign({},p,{createBuildingType:p.createBuildingType===opt.id?null:opt.id});});}} className={chipCls} style={chipStyle(sel)}>{opt.label}</button>;})}</div></div>:null;
     var projectFollowUp=<div className="mt-3 max-w-[300px] mx-auto text-left"><p className="font-sans text-[15px] font-medium text-headline mb-2">3 project names (optional)</p>{renderOptionalNameFields('projectNames','We only add a name when it fits that idea. A sewing project stays with making. A coding project stays with building.')}</div>;
@@ -6187,13 +6289,23 @@ function App(){
     var root=document.getElementById('root');
     return root?root.scrollTop:window.scrollY||0;
   }
+  function scrollMobileTopSmooth(){
+    var root=document.getElementById('root');
+    try{
+      if(root&&root.scrollTop>0)root.scrollTo({top:0,behavior:'smooth'});
+      else if(!root)window.scrollTo({top:0,behavior:'smooth'});
+    }catch(e){writeMobileScroll(0);}
+  }
   function writeMobileScroll(y){
     var root=document.getElementById('root');
     if(root){root.scrollTop=y;}
     else{window.scrollTo(0,y);}
   }
   function switchMobileTab(tab,viaTabBar){
-    if(tab===mobileTab)return;
+    if(tab===mobileTab){
+      if(isAndroidApp&&viaTabBar)scrollMobileTopSmooth();
+      return;
+    }
     mobileScrollPos.current[mobileTab]=readMobileScroll();
     if(viaTabBar){
       mobileTabResetTopRef.current=false;
@@ -6453,7 +6565,7 @@ function App(){
   var renderMobileTabBar=function(){
     var bar=<div className="mobile-tab-bar lg:hidden px-4">
       <div className="mobile-tab-bar-inner relative max-w-[480px] mx-auto">
-        {(function(){var active=mobileTab==='flow';return <button onClick={function(){if(mobileTab==='flow'){setSpinKey(function(k){return k+1;});}else{switchMobileTab('flow',true);}}} className="absolute left-1/2 -translate-x-1/2 -top-[14px] flex flex-col items-center gap-0.5 z-10">
+        {(function(){var active=mobileTab==='flow';return <button onClick={function(){if(mobileTab==='flow'){if(isAndroidApp&&readMobileScroll()>40){scrollMobileTopSmooth();return;}setSpinKey(function(k){return k+1;});}else{switchMobileTab('flow',true);}}} className="absolute left-1/2 -translate-x-1/2 -top-[14px] flex flex-col items-center gap-0.5 z-10">
           <div className="w-[54px] h-[54px] rounded-full flex items-center justify-center transition-all"
             style={{background:'white',boxShadow:active?'0 4px 22px rgba(232,144,168,0.45)':'0 3px 16px rgba(0,0,0,0.12)'}}>
             <span className="text-[22px]">{'🎯'}</span>
@@ -8510,7 +8622,7 @@ function App(){
             <p className="font-serif text-[22px] md:text-[26px] text-headline italic mb-2 leading-snug">What would you love more<br/>of in your life right now? ✨</p>
             <p className="font-sans text-[15px] text-headline mb-5 max-w-[320px] mx-auto">Pick up to 4</p>
             <div className="flex flex-col gap-2 w-full max-w-[340px] mx-auto mb-6">
-              {OVERALL_GOAL_OPTIONS.map(function(opt){var sel=(personalizationProfile.overallGoals||[]).indexOf(opt.id)>=0;return <button key={opt.id} onClick={function(){toggleOverallGoal(opt.id);}} className="w-full font-sans text-[13px] px-4 py-2.5 rounded-full border transition-all active:scale-[0.98]" style={{background:sel?'rgba(196,154,122,0.15)':'white',borderColor:sel?'#C49A7A':'rgba(0,0,0,0.08)',color:sel?'#C49A7A':'#2E1C16'}}>{opt.label}</button>;})}
+              {OVERALL_GOAL_OPTIONS.map(function(opt){var sel=(personalizationProfile.overallGoals||[]).indexOf(opt.id)>=0;return <button key={opt.id} onClick={function(){toggleOverallGoal(opt.id);}} className="w-full font-sans text-[13px] px-4 py-2.5 rounded-full border transition-all active:scale-[0.98]" style={{background:sel?'rgba(196,154,122,0.15)':'white',borderColor:sel?'#C49A7A':'rgba(0,0,0,0.08)',color:sel?(isAndroidApp?'#7A4E33':'#C49A7A'):'#2E1C16'}}>{opt.label}</button>;})}
             </div>
             <button onClick={function(){if((personalizationProfile.overallGoals||[]).length)setObSub(1);}} disabled={!(personalizationProfile.overallGoals||[]).length} className="font-sans text-[13px] font-semibold text-white px-8 py-3 rounded-full active:scale-[0.97]" style={{background:'#C49A7A',boxShadow:'0 4px 14px rgba(196,154,122,0.3)',opacity:(personalizationProfile.overallGoals||[]).length?1:0.4}}>{(personalizationProfile.overallGoals||[]).length?'Continue':'Pick at least one'}</button>
           </div>}
@@ -8519,7 +8631,7 @@ function App(){
             <p className="font-serif text-[22px] md:text-[26px] text-headline italic mb-2 leading-snug">What's been getting in the way<br/>of enjoying your days?</p>
             <p className="font-sans text-[15px] text-headline mb-5 max-w-[320px] mx-auto">Pick up to 2</p>
             <div className="flex flex-wrap justify-center gap-2 max-w-[340px] mx-auto mb-6">
-              {CORE_FRICTION_OPTIONS.map(function(opt){var sel=(personalizationProfile.coreFrictions||[]).indexOf(opt.id)>=0;return <button key={opt.id} onClick={function(){toggleProfileArray('coreFrictions',opt.id,2);}} className="font-sans text-[13px] px-3 py-2 rounded-full border transition-all active:scale-[0.95]" style={{background:sel?'rgba(196,154,122,0.15)':'white',borderColor:sel?'#C49A7A':'rgba(0,0,0,0.08)',color:sel?'#C49A7A':'#2E1C16'}}>{opt.label}</button>;})}
+              {CORE_FRICTION_OPTIONS.map(function(opt){var sel=(personalizationProfile.coreFrictions||[]).indexOf(opt.id)>=0;return <button key={opt.id} onClick={function(){toggleProfileArray('coreFrictions',opt.id,2);}} className="font-sans text-[13px] px-3 py-2 rounded-full border transition-all active:scale-[0.95]" style={{background:sel?'rgba(196,154,122,0.15)':'white',borderColor:sel?'#C49A7A':'rgba(0,0,0,0.08)',color:sel?(isAndroidApp?'#7A4E33':'#C49A7A'):'#2E1C16'}}>{opt.label}</button>;})}
             </div>
             <button onClick={function(){if((personalizationProfile.coreFrictions||[]).length)setObSub(2);}} disabled={!(personalizationProfile.coreFrictions||[]).length} className="font-sans text-[13px] font-semibold text-white px-8 py-3 rounded-full active:scale-[0.97]" style={{background:'#C49A7A',boxShadow:'0 4px 14px rgba(196,154,122,0.3)',opacity:(personalizationProfile.coreFrictions||[]).length?1:0.4}}>{(personalizationProfile.coreFrictions||[]).length?'Continue':'Pick at least one'}</button>
             <button onClick={function(){setObSub(0);}} className="block mx-auto mt-3 font-sans text-[13px] text-headline">Back</button>
