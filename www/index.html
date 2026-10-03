@@ -6448,7 +6448,8 @@ function App(){
   },[showLanding,heroPhone]);
   useEffect(function(){
     if(!(showOnboard&&obStep===8))return;
-    var DEMO_MS=26000;
+    // Fallback only: the bar follows the video's real length when it's playing.
+    var DEMO_MS=25000;
     var finished=false;
     function finishDemo(){
       if(finished)return;
@@ -6471,7 +6472,8 @@ function App(){
       var v=onboardingDemoVideoRef.current;
       var pct;
       if(v&&isFinite(v.currentTime)&&v.currentTime>0){
-        pct=Math.min(100,(v.currentTime/(DEMO_MS/1000))*100);
+        var len=(isFinite(v.duration)&&v.duration>0)?v.duration:DEMO_MS/1000;
+        pct=Math.min(100,(v.currentTime/len)*100);
       }else{
         pct=Math.min(100,((Date.now()-start)/DEMO_MS)*100);
       }
@@ -10099,7 +10101,7 @@ function App(){
               <div style={{position:'absolute',left:-2,top:72,width:3,height:25,background:'#2C2C2E',borderRadius:'3px 0 0 3px'}}/>
               <div style={{position:'absolute',left:-2,top:104,width:3,height:25,background:'#2C2C2E',borderRadius:'3px 0 0 3px'}}/>
               <div style={{position:'absolute',right:-2,top:86,width:3,height:42,background:'#2C2C2E',borderRadius:'0 3px 3px 0'}}/>
-              <div style={{position:'relative',borderRadius:38,border:'7px solid #1C1C1E',boxShadow:'inset 0 0 0 1px rgba(255,255,255,0.06),0 0 0 1.5px #2a2a2a,0 28px 72px rgba(0,0,0,0.28)',background:'#FAF6F2',overflow:'hidden',width:'100%',aspectRatio:'882 / 1920',maxHeight:'54dvh'}}>
+              <div style={{position:'relative',borderRadius:38,border:'7px solid #1C1C1E',boxShadow:'inset 0 0 0 1px rgba(255,255,255,0.06),0 0 0 1.5px #2a2a2a,0 28px 72px rgba(0,0,0,0.28)',background:'#FAF6F2',overflow:'hidden',width:'100%',aspectRatio:'888 / 1920',maxHeight:'54dvh'}}>
                 <video
                   ref={onboardingDemoVideoRef}
                   src="video/onboarding-demo.mp4"
