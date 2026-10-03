@@ -1,0 +1,28 @@
+rules_version = '2';
+
+// Cloud Storage: deny everything except each person's own "Remember this moment" photos.
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // ── Default: deny everything not explicitly matched ──────────────────────
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+
+    // ── users/{uid}/moments/{YYYY-MM-DD}/{area}/{photoId}.jpg (+ _thumb.jpg) ──
+    // Only the signed-in owner can see, add, replace or delete their own photos.
+    // Uploads must be JPEGs under 3 MB (the app sends ~200-400 KB after shrinking).
+    match /users/{uid}/moments/{allPaths=**} {
+      allow read: if request.auth != null
+                  && request.auth.uid == uid;
+
+      allow create, update: if request.auth != null
+                            && request.auth.uid == uid
+                            && request.resource.size < 3 * 1024 * 1024
+                            && request.resource.contentType == 'image/jpeg';
+
+      allow delete: if request.auth != null
+                    && request.auth.uid == uid;
+    }
+  }
+}

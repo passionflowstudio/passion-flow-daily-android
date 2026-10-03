@@ -80,9 +80,17 @@
           title: title,
           body: body,
           extra: { action: id === MORNING_NOTIF_ID ? 'open_daily_flow' : 'open_app' },
+          // A daily reminder does not need to land on the exact second, so it is
+          // scheduled inexactly. Exact alarms would make Android open its "Alarms
+          // & reminders" special-access screen, which this app deliberately does
+          // not declare the permission for.
+          isExactNotification: false,
           schedule: {
+            // "on" by itself already repeats every day at this wall-clock time.
+            // Adding every:'day' takes precedence over it and would instead fire
+            // 24h after scheduling, ignoring the time the user picked.
             on: { hour: parts.hour, minute: parts.minute },
-            every: 'day'
+            allowWhileIdle: true
           }
         }]
       });
@@ -252,7 +260,8 @@
             title: 'Your Daily Flow is waiting ✨',
             body: 'Five ideas, picked around you, are ready.',
             extra: { action: 'open_paywall' },
-            schedule: { at: new Date(fireAt) }
+            isExactNotification: false,
+            schedule: { at: new Date(fireAt), allowWhileIdle: true }
           }]
         });
       }).then(function () {

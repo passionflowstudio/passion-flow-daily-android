@@ -1,0 +1,34 @@
+{
+  "recordedAt": "2026-10-02T10:18:18.738Z",
+  "android": {
+    "rates": {
+      "cards with a contradictory time prefix (%)": 0.6,
+      "Daily Flow days with a multi-day idea (%)": 30.5,
+      "Pick for Me cards that are multi-day (%)": 7.8,
+      "days with 2+ heavy items (%)": 14.3,
+      "days repeating an activity across cards (%)": 15.5,
+      "days where Reset is a chore or project (%)": 12.5,
+      "cards longer than the user's time preference (%)": 4.5,
+      "cards matching the user's stated preference (%)": 100
+    }
+  },
+  "ios": {
+    "rates": {
+      "cards with a contradictory time prefix (%)": 9.9,
+      "Daily Flow days with a multi-day idea (%)": 26.3,
+      "Pick for Me cards that are multi-day (%)": 6.7,
+      "days with 2+ heavy items (%)": 14.3,
+      "days repeating an activity across cards (%)": 18.3,
+      "days where Reset is a chore or project (%)": 10.3,
+      "cards longer than the user's time preference (%)": 4.8,
+      "cards matching the user's stated preference (%)": 99.8
+    },
+    "shuffle": {
+      "avg theme keys seen in 12 shuffles": 3.4,
+      "rerolls repeating the activity they replaced (%)": 11,
+      "repeated ideas across all shuffles": 17
+    },
+    "source": "/Users/joshuaebalo/Desktop/google-play-port/www"
+  },
+  "notes": "Shuffle before-values come from the untouched iOS snapshot (same pre-change shuffle engine). The Android shuffle baseline used an earlier metric that was dominated by unclassified ideas and was replaced. The contradictory-prefix yardstick was narrowed to prefixes placed in front of the idea text; the iOS before-value was recomputed with it. The Android before-value (0.6) was measured with the older, looser definition and can only overstate."
+}

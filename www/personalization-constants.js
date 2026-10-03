@@ -39,16 +39,16 @@
   ];
 
   var DAY_BANDWIDTH_OPTIONS = [
-    { id: 'very_full', label: 'Very full — I barely have time for myself' },
-    { id: 'pretty_full', label: 'Pretty full — I have some pockets of free time' },
-    { id: 'balanced', label: 'Balanced — I usually have time for myself' },
-    { id: 'very_flexible', label: 'Very flexible — I have lots of control over my day' }
+    { id: 'very_full', label: 'Very full: I barely have time for myself' },
+    { id: 'pretty_full', label: 'Pretty full: I have some pockets of free time' },
+    { id: 'balanced', label: 'Balanced: I usually have time for myself' },
+    { id: 'very_flexible', label: 'Very flexible: I have lots of control over my day' }
   ];
 
   var TIME_BUCKET_OPTIONS = [
-    { id: 'micro', label: '5–10 min' },
-    { id: 'short', label: '15–30 min' },
-    { id: 'medium', label: '30–60 min' },
+    { id: 'micro', label: '5 to 10 minutes' },
+    { id: 'short', label: '15 to 30 minutes' },
+    { id: 'medium', label: '30 to 60 minutes' },
     { id: 'flexible', label: "I'm flexible" }
   ];
 
@@ -65,22 +65,117 @@
     { id: 'creative_discovery', label: 'Trying new things / I want to discover what I like' }
   ];
 
+  /* `re` matches idea text so a picked style can lift ideas that fit it.
+     Ids must match the keys in create-style-ideas.js. */
   var CREATE_MUSIC_SUBTYPES = [
-    { id: 'singing', label: 'Singing' }, { id: 'songwriting', label: 'Songwriting' },
-    { id: 'instrument', label: 'Playing an instrument' }, { id: 'producing', label: 'Producing / making music' },
-    { id: 'discovering_music', label: 'Discovering music' }
+    { id: 'guitar', label: 'Guitar', re: /guitar|chord|strum|riff/ },
+    { id: 'piano', label: 'Piano / keys', re: /piano|keyboard|keys/ },
+    { id: 'singing', label: 'Singing', re: /sing|vocal|karaoke/ },
+    { id: 'songwriting', label: 'Songwriting', re: /songwrit|write.*song|lyric|melody|chorus/ },
+    { id: 'producing', label: 'Producing beats', re: /produc|beat|mix|loop|daw|sample/ },
+    { id: 'drums', label: 'Drums', re: /drum|rhythm|groove/ },
+    { id: 'dj', label: 'DJing', re: /\bdj|turntable|playlist/ },
+    { id: 'instrument', label: 'Another instrument', re: /instrument|ukulele|violin|bass|music theory|by ear/ }
   ];
 
   var CREATE_ART_SUBTYPES = [
-    { id: 'drawing', label: 'Drawing' }, { id: 'painting', label: 'Painting' },
-    { id: 'coloring', label: 'Coloring' }, { id: 'crafts', label: 'Crafts' },
-    { id: 'digital_art', label: 'Digital art' }
+    { id: 'drawing', label: 'Drawing', re: /draw|sketch|doodle/ },
+    { id: 'painting', label: 'Painting', re: /paint|watercolor|canvas/ },
+    { id: 'digital_art', label: 'Digital art', re: /digital|procreate|ipad|illustrat/ },
+    { id: 'pottery', label: 'Pottery / clay', re: /clay|pottery|ceramic/ },
+    { id: 'knitting', label: 'Knitting / crochet', re: /knit|crochet|yarn/ },
+    { id: 'sewing', label: 'Sewing / embroidery', re: /sew|embroider|stitch/ },
+    { id: 'crafts', label: 'Crafts', re: /craft|collage|origami|bead|card/ },
+    { id: 'coloring', label: 'Coloring', re: /color/ }
   ];
 
   var CREATE_BUILDING_TYPES = [
-    { id: 'own_business', label: 'My own business' }, { id: 'side_hustle', label: 'A side hustle' },
-    { id: 'career_goal', label: 'A career goal' }, { id: 'personal_project', label: 'A personal project' },
-    { id: 'new_skill', label: 'A new skill' }
+    { id: 'online_business', label: 'Online business', re: /business|customer|launch|startup|online/ },
+    { id: 'digital_products', label: 'Digital products', re: /digital product|template|ebook|course|guide/ },
+    { id: 'ecommerce', label: 'Selling products', re: /sell|etsy|shop|store|product/ },
+    { id: 'personal_brand', label: 'Personal brand', re: /brand|audience|post|content/ },
+    { id: 'freelancing', label: 'Freelancing / services', re: /freelanc|client|portfolio|service/ },
+    { id: 'real_estate', label: 'Real estate', re: /real estate|property|rental/ },
+    { id: 'sales', label: 'Sales', re: /sales|pitch|prospect|close/ },
+    { id: 'tech_apps', label: 'Tech / apps', re: /code|coding|\bapp\b|website|software/ }
+  ];
+
+  var CREATE_WRITING_STYLES = [
+    { id: 'journaling', label: 'Journaling', re: /journal|morning pages|reflect/ },
+    { id: 'poetry', label: 'Poetry', re: /poem|poetry|haiku/ },
+    { id: 'fiction', label: 'Stories / fiction', re: /story|stories|fiction|novel|character|chapter/ },
+    { id: 'essays', label: 'Essays / blogging', re: /essay|blog|article|post/ },
+    { id: 'scripts', label: 'Scripts', re: /script|screenplay|scene|dialogue/ },
+    { id: 'memoir', label: 'Memoir / personal stories', re: /memoir|memory|childhood|personal story/ }
+  ];
+
+  var CREATE_PHOTO_STYLES = [
+    { id: 'phone_photos', label: 'Phone photos', re: /phone|photo walk|snap/ },
+    { id: 'camera', label: 'Camera', re: /camera|lens|exposure|manual/ },
+    { id: 'portraits', label: 'Portraits', re: /portrait|people|selfie/ },
+    { id: 'nature', label: 'Nature / landscape', re: /nature|landscape|sunset|sky|outside/ },
+    { id: 'street', label: 'Street', re: /street|city|neighborhood/ },
+    { id: 'video_film', label: 'Video / film', re: /video|film|clip|time.lapse/ },
+    { id: 'editing', label: 'Editing', re: /edit|preset|color grade|lightroom/ }
+  ];
+
+  var CREATE_COOKING_STYLES = [
+    { id: 'everyday_meals', label: 'Everyday meals', re: /cook|meal|dinner|lunch/ },
+    { id: 'baking', label: 'Baking', re: /bake|baking|cookie|cake|muffin/ },
+    { id: 'bread', label: 'Bread / sourdough', re: /bread|sourdough|dough|focaccia/ },
+    { id: 'desserts', label: 'Desserts', re: /dessert|sweet|chocolate|cake|cookie/ },
+    { id: 'world_cuisines', label: 'World cuisines', re: /cuisine|country|spice|new dish/ },
+    { id: 'healthy', label: 'Healthy cooking', re: /healthy|salad|vegetable|bowl|smoothie/ },
+    { id: 'drinks', label: 'Coffee / drinks', re: /drink|coffee|tea|latte|cocktail|mocktail/ }
+  ];
+
+  var CREATE_CONTENT_STYLES = [
+    { id: 'tiktok', label: 'TikTok', re: /tiktok|short video/ },
+    { id: 'instagram', label: 'Instagram', re: /instagram|reel|carousel|story/ },
+    { id: 'youtube', label: 'YouTube', re: /youtube|vlog|channel/ },
+    { id: 'podcast', label: 'Podcasting', re: /podcast|episode|audio/ },
+    { id: 'newsletter', label: 'Newsletter / blog', re: /newsletter|blog|substack/ },
+    { id: 'streaming', label: 'Streaming', re: /stream|twitch|go live/ },
+    { id: 'linkedin', label: 'LinkedIn', re: /linkedin/ }
+  ];
+
+  var CREATE_DIY_STYLES = [
+    { id: 'home_projects', label: 'Home projects', re: /home|room|house|fix|repair/ },
+    { id: 'woodworking', label: 'Woodworking', re: /wood|furniture|shelf|shelves/ },
+    { id: 'interior_design', label: 'Interior design', re: /interior|decor|rearrange|layout|room/ },
+    { id: 'graphic_design', label: 'Graphic design', re: /graphic|logo|poster|canva|font|design/ },
+    { id: 'upcycling', label: 'Upcycling', re: /upcycl|thrift|repurpose|old .* into/ },
+    { id: 'plants', label: 'Plants / gardening', re: /plant|garden|herb|seed/ }
+  ];
+
+  var CREATE_FASHION_STYLES = [
+    { id: 'styling', label: 'Styling outfits', re: /outfit|style|wardrobe|closet/ },
+    { id: 'makeup', label: 'Makeup', re: /makeup|liner|lip/ },
+    { id: 'skincare', label: 'Skincare', re: /skin|face mask|routine/ },
+    { id: 'hair', label: 'Hair', re: /hair|braid|curl/ },
+    { id: 'nails', label: 'Nails', re: /nail|manicure/ },
+    { id: 'thrifting', label: 'Thrifting', re: /thrift|vintage|secondhand/ },
+    { id: 'making_clothes', label: 'Making clothes', re: /sew|alter|hem|embroider|garment/ }
+  ];
+
+  var CREATE_LEVEL_OPTIONS = [
+    { id: 'new', label: 'Just starting' },
+    { id: 'back', label: 'Getting back into it' },
+    { id: 'regular', label: 'Already doing it' }
+  ];
+
+  /* One section per Create interest: its style chips and one optional project name.
+     creative_discovery has no section on purpose. */
+  var CREATE_STYLE_GROUPS = [
+    { interest: 'music', field: 'createMusicSubtypes', options: CREATE_MUSIC_SUBTYPES, project: 'Music project', placeholder: 'e.g. my EP' },
+    { interest: 'art_crafts', field: 'createArtSubtypes', options: CREATE_ART_SUBTYPES, project: 'Art project', placeholder: 'e.g. my sketchbook' },
+    { interest: 'writing', field: 'createWritingStyles', options: CREATE_WRITING_STYLES, project: 'Writing project', placeholder: 'e.g. my novel' },
+    { interest: 'photography', field: 'createPhotoStyles', options: CREATE_PHOTO_STYLES, project: 'Photo project', placeholder: 'e.g. my portfolio' },
+    { interest: 'cooking_baking', field: 'createCookingStyles', options: CREATE_COOKING_STYLES, project: 'Cooking project', placeholder: 'e.g. family cookbook' },
+    { interest: 'content_creation', field: 'createContentStyles', options: CREATE_CONTENT_STYLES, project: 'Content project', placeholder: 'e.g. my channel' },
+    { interest: 'building_business', field: 'createBuildingTypes', options: CREATE_BUILDING_TYPES, project: 'Business project', placeholder: 'e.g. my shop' },
+    { interest: 'diy_design', field: 'createDiyStyles', options: CREATE_DIY_STYLES, project: 'DIY project', placeholder: 'e.g. garage shelves' },
+    { interest: 'fashion_beauty', field: 'createFashionStyles', options: CREATE_FASHION_STYLES, project: 'Fashion project', placeholder: 'e.g. capsule wardrobe' }
   ];
 
   var MINDSET_NEED_OPTIONS = [
@@ -159,8 +254,24 @@
       createMusicSubtypes: [],
       createArtSubtypes: [],
       createBuildingType: null,
+      createBuildingTypes: [],
+      createWritingStyles: [],
+      createPhotoStyles: [],
+      createCookingStyles: [],
+      createContentStyles: [],
+      createDiyStyles: [],
+      createFashionStyles: [],
+      createProjects: {},
+      createLevels: {},
+      createStylesSeen: false,
+      // When the onboarding quick-preference screen filled in area preferences. Those
+      // answers live in the normal fields above; this only records that they are
+      // broad, so the app keeps offering the deeper questions instead of treating
+      // the profile as fully personalized.
+      quickPreferencesAt: null,
       projectName: '',
       projectNames: [],
+      projectTypes: [],
       mindsetNeeds: [],
       mindsetFormats: [],
       connectTargets: [],
@@ -212,6 +323,54 @@
     return false;
   }
 
+  var PROJECT_SHAPED_FIRST = ['building_business', 'content_creation', 'writing', 'music', 'art_crafts', 'diy_design', 'photography', 'fashion_beauty', 'cooking_baking'];
+
+  /* Older builds stored up to 3 loose project names. Give each one a home under a
+     single Create interest so it shows in that interest's section. */
+  function legacyProjectsByInterest(p) {
+    var out = {};
+    var interests = (p.createInterests || []).filter(function (id) { return id !== 'creative_discovery'; });
+    var types = p.projectTypes || [];
+    var composer = global.PFDRecommendationComposer;
+    var leftovers = [];
+    (p.projectNames || []).concat([p.projectName]).forEach(function (n, i) {
+      var name = (n || '').trim();
+      if (!name) return;
+      var placed = Object.keys(out).some(function (k) { return out[k] === name; });
+      if (placed || leftovers.indexOf(name) >= 0) return;
+      var target = types[i] && !out[types[i]] ? types[i] : null;
+      if (!target && composer && composer.projectInterestsFor) {
+        target = composer.projectInterestsFor(name).filter(function (id) {
+          return interests.indexOf(id) >= 0 && !out[id];
+        })[0] || null;
+      }
+      if (target) out[target] = name;
+      else leftovers.push(name);
+    });
+    leftovers.forEach(function (name) {
+      var free = PROJECT_SHAPED_FIRST.filter(function (id) { return interests.indexOf(id) >= 0 && !out[id]; })[0];
+      if (free) out[free] = name;
+    });
+    return out;
+  }
+
+  /* projectNames / projectTypes / projectName mirror createProjects for older app versions. */
+  function syncLegacyProjectFields(p) {
+    var names = [], types = [];
+    Object.keys(p.createProjects || {}).forEach(function (id) {
+      var name = (p.createProjects[id] || '').trim();
+      if (!name) { delete p.createProjects[id]; return; }
+      p.createProjects[id] = name;
+      names.push(name);
+      types.push(id);
+    });
+    p.projectNames = names;
+    p.projectTypes = types;
+    p.projectName = names[0] || '';
+    p.createBuildingType = (p.createBuildingTypes || [])[0] || null;
+    return p;
+  }
+
   function migrateProfileToV3(profile) {
     var p = createEmptyProfileV3();
     if (!profile) return p;
@@ -257,6 +416,13 @@
       (cg.nourish || []).forEach(function (x) { if (resetMap[x] && p.resetStyles.indexOf(resetMap[x]) < 0) p.resetStyles.push(resetMap[x]); });
     }
     overlayExistingValues(p, profile);
+    if (!p.createBuildingTypes.length && p.createBuildingType) p.createBuildingTypes = [p.createBuildingType];
+    var oldBuilding = { own_business: 'online_business', side_hustle: 'ecommerce' };
+    p.createBuildingTypes = p.createBuildingTypes.map(function (id) { return oldBuilding[id] || id; }).filter(function (id, i, arr) {
+      return arr.indexOf(id) === i && CREATE_BUILDING_TYPES.some(function (o) { return o.id === id; });
+    });
+    p.createProjects = Object.keys(p.createProjects || {}).length ? Object.assign({}, p.createProjects) : legacyProjectsByInterest(p);
+    syncLegacyProjectFields(p);
     if (profile.completedAt || profile.version >= 2) {
       p.completedAt = profile.completedAt || Date.now();
     }
@@ -275,6 +441,9 @@
     CREATE_MUSIC_SUBTYPES: CREATE_MUSIC_SUBTYPES,
     CREATE_ART_SUBTYPES: CREATE_ART_SUBTYPES,
     CREATE_BUILDING_TYPES: CREATE_BUILDING_TYPES,
+    CREATE_STYLE_GROUPS: CREATE_STYLE_GROUPS,
+    CREATE_LEVEL_OPTIONS: CREATE_LEVEL_OPTIONS,
+    syncLegacyProjectFields: syncLegacyProjectFields,
     MINDSET_NEED_OPTIONS: MINDSET_NEED_OPTIONS,
     MINDSET_FORMAT_OPTIONS: MINDSET_FORMAT_OPTIONS,
     CONNECT_TARGET_OPTIONS: CONNECT_TARGET_OPTIONS,

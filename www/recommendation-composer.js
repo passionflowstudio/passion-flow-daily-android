@@ -4,17 +4,17 @@
 (function (global) {
   var VARIANTS = {
     walk: [
-      'Take a {duration} walk without tracking anything.',
+      'Take a {durationAdj} walk without tracking anything.',
       'Step outside for {duration} with nowhere specific to get to.',
       'Leave your phone in your pocket and walk until you notice three things you normally miss.'
     ],
     walk_calm: [
-      'Take a slow {duration} walk without tracking anything. Let movement be the break, not another thing to optimize.',
+      'Take a slow {durationAdj} walk without tracking anything. Let movement be the break, not another thing to optimize.',
       'Go for an easy walk with no pace goal, just enough to change how your body feels.'
     ],
     walk_novelty: [
       'Walk somewhere busier or different than your usual route for about {duration}.',
-      'Take a {duration} walk somewhere you do not usually go.'
+      'Take a {durationAdj} walk somewhere you do not usually go.'
     ],
     stretch: [
       'Give yourself {duration} of slow stretching somewhere comfortable.',
@@ -99,6 +99,9 @@
       'For {project}: {text}',
       'Use this for {project}: {text}'
     ],
+    style_keep: [
+      '{text}'
+    ],
     project_any: [
       'Spend {duration} on {project}. One small next step only.',
       'Work on {project} for {duration}. Make one imperfect thing and stop when the timer ends.',
@@ -109,7 +112,7 @@
       'Make something messy and just for you for {duration}, no audience, no outcome.'
     ],
     photo_novelty: [
-      'Take your camera on a {duration} walk and photograph five things you would normally pass without looking.',
+      'Take your camera on a {durationAdj} walk and photograph five things you would normally pass without looking.',
       'Notice five interesting details around you and capture them in {duration}.'
     ],
     mindset_journal: [
@@ -165,8 +168,8 @@
     } catch (e) { return false; }
   }
 
-  // Android only (#8): ideas that already carry their own length or are clearly longer
-  // than a few minutes should not get a "5-10 minutes" style lead-in.
+  // Ideas that already carry their own length, or are clearly longer than a few
+  // minutes, never get a "5-10 minutes" style lead-in. Shared by both platforms.
   var LONG_OR_TIMED_RE = /\b\d+\s*(minutes?|mins?|hours?|hrs?|days?|weeks?|pages?)\b|\b(an?|one|full|whole|entire)\s+(hour|day|afternoon|evening|morning|night|weekend|week|month|season)\b|\b(all day|every|overnight|weekend|this week|this season|every day|every night|consecutive|trip|travel|spa|bathhouse|dinner|meal|hike|trail|park|camping|museum|concert|class|course|league|festival|road trip|sunrise|sunset|picnic|beach)\b/i;
 
   function ideaSuitsShortPrefix(idea) {
@@ -178,12 +181,33 @@
     return !LONG_OR_TIMED_RE.test(t);
   }
 
+  /* How long the IDEA takes, as [noun, adjective]: "15 minutes" / "a 15-minute walk".
+     It used to start from the person's time preference, which is how "Try this for
+     15 minutes" ended up in front of an afternoon-long idea. That preference is
+     already a filter in the engine, so the only place it still applies is here:
+     someone who asked for 5-10 minutes gets template activities sized to that. */
+  var IDEA_DURATION_WORDS = {
+    '15m': ['15 minutes', '15-minute'],
+    '30m': ['30 minutes', '30-minute'],
+    '1h': ['an hour', '60-minute'],
+    '2h+': ['a couple of hours', 'two-hour']
+  };
+  var BUCKET_DURATION_WORDS = {
+    micro: ['5 to 10 minutes', '5 to 10 minute'],
+    short: ['15 minutes', '15-minute'],
+    medium: ['30 minutes', '30-minute']
+  };
+
+  function durationWords(profile, idea) {
+    var pref = profile.defaultTimeBucket;
+    if (pref === 'micro' || pref === '5-10') return BUCKET_DURATION_WORDS.micro;
+    var fromIdea = idea && IDEA_DURATION_WORDS[idea.rawTime];
+    if (fromIdea) return fromIdea;
+    return BUCKET_DURATION_WORDS[(idea && idea.timeEstimate) || pref] || ['20 minutes', '20-minute'];
+  }
+
   function durationLabel(profile, idea) {
-    var tb = profile.defaultTimeBucket || idea.timeEstimate || 'short';
-    if (tb === 'micro' || tb === '5-10') return '5–10 minutes';
-    if (tb === 'short' || tb === '15-30') return '15 minutes';
-    if (tb === 'medium' || tb === '30-60') return '30 minutes';
-    return '20 minutes';
+    return durationWords(profile, idea)[0];
   }
 
   function hashStr(s) {
@@ -307,57 +331,106 @@
     return /project|portfolio|chapter|draft|brand|business|newsletter|website|course/.test(text);
   }
 
-  function uniqueProjectNames(profile) {
-    var names = (profile.projectNames || []).concat([profile.projectName]).map(function (n) {
-      return (n || '').trim();
-    }).filter(Boolean);
-    var unique = [];
-    names.forEach(function (n) { if (unique.indexOf(n) < 0) unique.push(n); });
-    return unique;
+  /* createProjects holds one project per Create interest; a project only ever
+     attaches to ideas from its interest. The arrays are the older shape. */
+  function projectEntries(profile) {
+    var byInterest = profile.createProjects || {};
+    var keyed = Object.keys(byInterest).filter(function (id) { return (byInterest[id] || '').trim(); });
+    if (keyed.length) {
+      return keyed.map(function (id) { return { name: byInterest[id].trim(), type: id }; });
+    }
+    var names = profile.projectNames || [];
+    var types = profile.projectTypes || [];
+    var out = [];
+    var seen = {};
+    names.forEach(function (n, i) {
+      var name = (n || '').trim();
+      if (!name || seen[name]) return;
+      seen[name] = 1;
+      out.push({ name: name, type: types[i] || null });
+    });
+    var legacy = (profile.projectName || '').trim();
+    if (legacy && !seen[legacy]) out.push({ name: legacy, type: null });
+    return out;
+  }
+
+  /* Within one interest a project usually belongs to a single style: "my novel" is
+     fiction, not poetry or journaling. The style chips already carry the keywords, so
+     use them. A name that matches no style (for example "passion flow gifts") stays
+     interest wide, exactly as before. */
+  function projectStyleFor(profile, name, interestId) {
+    var groups = (global.PFDConstants && global.PFDConstants.CREATE_STYLE_GROUPS) || [];
+    var group = null;
+    for (var i = 0; i < groups.length; i++) {
+      if (groups[i].interest === interestId) { group = groups[i]; break; }
+    }
+    if (!group) return null;
+    var picked = (profile && profile[group.field]) || [];
+    var text = (name || '').toLowerCase();
+    for (var j = 0; j < group.options.length; j++) {
+      var opt = group.options[j];
+      if (!opt.re || !opt.re.test(text)) continue;
+      /* These keywords are stems, so an unrelated word can trip one ("every single
+         winter" looks like singing). Only lock a project to a style the person
+         actually picked, otherwise leave it interest wide. */
+      if (picked.indexOf(opt.id) < 0) continue;
+      return opt.id;
+    }
+    return null;
+  }
+
+  /* A project whose name points at one style must not show up on another style's
+     idea. Ideas with no style at all (the older library) are unaffected. */
+  function entrySuitsIdeaStyle(profile, entry, idea, primary) {
+    if (!idea || !idea.styleId) return true;
+    var style = projectStyleFor(profile, entry.name, primary);
+    if (!style) return true;
+    return style === idea.styleId;
+  }
+
+  /* "For the album" would otherwise read "Use this for For the album". */
+  function cleanProjectName(name) {
+    return (name || '').trim().replace(/^for\s+/i, '').trim();
+  }
+
+  function entryAffinities(entry) {
+    return entry.type ? [entry.type] : projectAffinities(entry.name);
+  }
+
+  function entryNames(entries) {
+    return entries.map(function (e) { return e.name; });
   }
 
   function projectMatch(profile, idea, seed) {
-    var unique = uniqueProjectNames(profile);
-    if (!unique.length) return null;
+    var entries = projectEntries(profile);
+    if (!entries.length) return null;
     var primary = ideaCreatePrimary(idea, profile);
     var interests = profile.createInterests || [];
-    var textHits = unique.filter(function (n) { return ideaTextMatchesProject(idea, n); });
+    entries = entries.filter(function (e) { return entrySuitsIdeaStyle(profile, e, idea, primary); });
+    if (!entries.length) return null;
+    var fits = entries.filter(function (e) { return !e.type || e.type === primary; });
+    var textHits = entryNames(fits.filter(function (e) { return ideaTextMatchesProject(idea, e.name); }));
     if (textHits.length) {
       return { name: rotateName(textHits, seed, textHits[0]), mode: 'text' };
     }
-    var typed = unique.filter(function (n) {
-      return projectAffinities(n).indexOf(primary) >= 0;
-    });
+    var typed = entryNames(entries.filter(function (e) {
+      return entryAffinities(e).indexOf(primary) >= 0;
+    }));
     if (typed.length) {
       return { name: rotateName(typed, seed, typed[0]), mode: 'generic' };
     }
-    var unlabeled = unique.filter(function (n) { return !projectAffinities(n).length; });
+    var unlabeled = entryNames(entries.filter(function (e) { return !entryAffinities(e).length; }));
     if (!unlabeled.length) return null;
     var canCarryCustom = isProjectShapedIdea(idea, primary) || interests.length === 1;
     if (!canCarryCustom) return null;
     return { name: rotateName(unlabeled, seed, unlabeled[0]), mode: 'generic' };
   }
 
-  function matchingProjectName(profile, idea, seed) {
-    var match = projectMatch(profile, idea, seed);
-    return match ? match.name : '';
-  }
-
   function projectLabel(profile, seed, idea, opts) {
-    opts = opts && typeof opts === 'object' ? opts : { forceProjectName: !!opts };
-    var unique = uniqueProjectNames(profile);
-    if (opts.forceProjectName && unique.length) {
-      var pick = typeof opts.projectNamePick === 'number' ? opts.projectNamePick : Math.abs(seed);
-      return unique[Math.abs(pick) % unique.length];
-    }
-    var matched = matchingProjectName(profile, idea, seed);
-    if (matched) return matched;
-    return 'your project';
-  }
-
-  function hasNamedProject(profile) {
-    if ((profile.projectName || '').trim()) return true;
-    return (profile.projectNames || []).some(function (n) { return (n || '').trim(); });
+    opts = opts || {};
+    var pickSeed = typeof opts.projectNamePick === 'number' ? opts.projectNamePick : seed;
+    var match = projectMatch(profile, idea, pickSeed);
+    return match ? (cleanProjectName(match.name) || match.name) : 'your project';
   }
 
   function communityLabel(profile, seed) {
@@ -456,6 +529,13 @@
   }
 
   function detectFamily(idea, profile, categoryId, opts) {
+    // Android only: the nature-connect pack gets its own lead-in.
+    if (isAndroidPlatform() && idea && idea.packId === 'nature-connect') return 'nature_connect';
+    // Starter ideas are written as finished cards: keep their exact wording. Connect
+    // still adds who it is with: inside the sentence when it has a {who} slot
+    // ("Spend 20 minutes with Josh..."), otherwise as "Do this with Josh: ...".
+    if (idea && idea.starter && /\{who\}/.test(idea.text || '')) return 'starter_who';
+    if (idea && idea.starter && (categoryId !== 'connect' || (idea.connectTargetTags || [])[0] === 'self')) return 'style_keep';
     opts = opts || {};
     var t = (idea.text || '').toLowerCase();
     var fr = profile.coreFrictions || [];
@@ -494,19 +574,24 @@
         return communityMatch(profile, idea, hashStr((idea && idea.id) || idea.text || '')) ? 'community_named' : 'community_keep';
       }
       if (primary === 'friends' || ideaTargets.indexOf('friends') >= 0) return 'friend_keep';
-      if (isAndroidPlatform() && idea.packId === 'nature-connect') return 'nature_connect';
       return 'generic';
     }
     if (categoryId === 'create') {
+      if (idea && idea.styleId) {
+        /* Beginner lessons are not project work, and with several business chips
+           picked we cannot tell which one the business project is. */
+        var ambiguousBusiness = idea.styleInterest === 'building_business' && (profile.createBuildingTypes || []).length > 1;
+        if (!opts.skipProjectName && idea.level !== 'new' && !ambiguousBusiness && projectMatch(profile, idea, hashStr(idea.id))) return 'create_named';
+        return 'style_keep';
+      }
       if (opts.skipProjectName) return 'generic';
       var match = projectMatch(profile, idea, hashStr((idea && idea.id) || idea.text || ''));
       if (match && match.mode === 'text') return 'create_named';
-      if ((match || opts.forceProjectName) && (profile.createInterests || []).indexOf('building_business') >= 0 && idea.productivityHeavy) {
+      if (match && (profile.createInterests || []).indexOf('building_business') >= 0 && idea.productivityHeavy) {
         if (fr.indexOf('work_switch_off') >= 0) return 'business_contained';
         return 'business_fun';
       }
       if (match) return 'project_any';
-      if (opts.forceProjectName && hasNamedProject(profile)) return 'project_any';
       return 'generic';
     }
     if (categoryId === 'learn') {
@@ -522,6 +607,7 @@
     seed = seed || hashStr(idea.id + (profile.updatedAt || ''));
     opts = opts || {};
     return tpl
+      .replace(/\{durationAdj\}/g, durationWords(profile, idea)[1])
       .replace(/\{duration\}/g, durationLabel(profile, idea))
       .replace(/\{partner\}/g, partnerLabel(profile, seed))
       .replace(/\{friend\}/g, (opts && opts.friendName) || friendLabel(profile, seed))
@@ -531,12 +617,81 @@
       .replace(/\{text\}/g, idea.text || '');
   }
 
+  /* The person a {who} idea is with. Same names and rotation as the lead-ins. */
+  function whoLabel(profile, idea, opts) {
+    var target = (idea.connectTargetTags || [])[0];
+    if (target === 'partner') return partnerLabel(profile);
+    if (target === 'family') return pickRotatedName(profile.familyNames, opts.familyNamePick || 0, 'someone in your family');
+    return pickRotatedName(profile.friendNames, opts.friendNamePick || 0, 'a friend');
+  }
+
+  /* ---------- the second line on a card ----------
+     Written ideas (starter-ideas.js) carry their own line. Library ideas get one
+     from this table only when the person told us the signal AND the idea really is
+     what the sentence says (screen free, gentle, new...). No rule fits, no line:
+     an honest blank beats an invented reason. Lines never repeat the person's
+     answers back to them. */
+  function has(list, v) { return (list || []).indexOf(v) >= 0; }
+  var LIBRARY_LINES = [
+    { cat: 'move', when: function (p, i) { return (has(p.coreFrictions, 'overthinking') || has(p.overallGoals, 'peace_presence')) && i.effortScore <= 2 && !i.booking; }, lines: ['Nothing needs figuring out while you’re moving.', 'Let your body lead. Your thoughts can wait.', 'Move first. Everything else can come later.'] },
+    { cat: 'move', when: function (p, i) { return (has(p.coreFrictions, 'low_energy') || p.dayBandwidth === 'very_full') && i.effortScore <= 1.5; }, lines: ['Easy counts. Stop while it still feels good.', 'Gentle is enough today.', 'Go at whatever pace feels kind.'] },
+    { cat: 'move', when: function (p, i) { return has(p.overallGoals, 'confidence') && i.effortScore >= 2.5 && !i.booking; }, lines: ['Give yourself a small challenge and notice what your body can do.', 'Go a little harder than usual, just once.', 'A small push you can feel proud of later.'] },
+    { cat: 'create', when: function (p, i) { return (has(p.coreFrictions, 'work_switch_off') || has(p.coreFrictions, 'self_neglect')) && !i.productivityHeavy; }, lines: ['Nothing to finish or show anyone. This one is just for you.', 'Let it stay unfinished. Making it is the point.', 'Not for work, not for anyone else. Just for you.'] },
+    { cat: 'create', when: function (p, i) { return (has(p.coreFrictions, 'choice_overload') || has(p.coreFrictions, 'overthinking')) && !i.openEnded; }, lines: ['Go with your first idea. It doesn’t need to be the best one.', 'Start with whatever comes to mind first.', 'The first version is the right one today.'] },
+    { cat: 'create', when: function (p, i) { return (has(p.coreFrictions, 'repetitive_days') || has(p.overallGoals, 'fun_novelty')) && i.noveltyLevel >= 2; }, lines: ['Something a little different from your usual day.', 'A small break from the usual.', 'Give today one thing it doesn’t usually have.'] },
+    { cat: 'learn', when: function (p, i) { return has(p.coreFrictions, 'overthinking') && i.offline && i.effortScore <= 1.5; }, lines: ['Nothing to solve. Just notice.', 'No answers needed. Just attention.', 'Let this be the quiet part of your day.'] },
+    { cat: 'learn', when: function (p, i) { return (has(p.coreFrictions, 'repetitive_days') || has(p.coreFrictions, 'lack_direction')) && i.noveltyLevel >= 2; }, lines: ['Follow your curiosity somewhere new.', 'Let one question lead you somewhere unexpected.', 'Curiosity is the only plan.'] },
+    { cat: 'connect', when: function (p, i) { return (has(p.coreFrictions, 'phone_overuse') || has(p.overallGoals, 'less_screen_time')) && i.offline && !i.screen; }, lines: ['Phones down for this one. Just the conversation.', 'Let the conversation have your full attention.', 'No screens, just the two of you talking.'] },
+    { cat: 'connect', when: function (p, i) { return has(p.overallGoals, 'deeper_relationships') && !i.booking; }, lines: ['Small moments like this are how closeness grows.', 'Time together doesn’t have to be big to matter.', 'This is how people stay close.'] },
+    { cat: 'nourish', when: function (p, i) { return (has(p.coreFrictions, 'phone_overuse') || has(p.overallGoals, 'less_screen_time')) && i.offline && !i.screen; }, lines: ['Give your attention a break from being pulled somewhere else.', 'Let the input stop for a little while.', 'Nothing to check, nothing to answer.'] },
+    { cat: 'nourish', when: function (p, i) { return (has(p.coreFrictions, 'low_energy') || p.dayBandwidth === 'very_full') && i.effortScore <= 1.5; }, lines: ['This isn’t time you need to make productive.', 'Rest is allowed to just be rest.', 'Nothing to get out of this. Just ease.'] },
+    { cat: 'nourish', when: function (p, i) { return (has(p.coreFrictions, 'self_neglect') || has(p.coreFrictions, 'others_first') || has(p.overallGoals, 'time_for_self')) && !i.chore; }, lines: ['This time is yours. Nothing else needs you right now.', 'No one else needs anything from this time.', 'Yours, and nobody else’s.'] }
+,
+    { cat: 'move', when: function (p, i) { return (has(p.coreFrictions, 'choice_overload') || has(p.coreFrictions, 'activation_difficulty')) && !i.openEnded && !i.booking; }, lines: ['Everything is already planned. Just start moving.', 'No decisions needed. Just follow it.', 'Start with the first move. The rest follows.'] },
+    { cat: 'move', when: function (p, i) { return (has(p.coreFrictions, 'work_switch_off') || has(p.coreFrictions, 'self_neglect')) && !i.booking; }, lines: ['Let work wait while you move.', 'This time belongs to your body, not your inbox.', 'Move for you, not for a goal.'] },
+    { cat: 'move', when: function (p, i) { return (has(p.coreFrictions, 'repetitive_days') || has(p.overallGoals, 'fun_novelty')) && i.noveltyLevel >= 2; }, lines: ['Something different for your body today.', 'A new way to move, just for fun.', 'Let today’s movement feel a little new.'] },
+    { cat: 'learn', when: function (p, i) { return (has(p.coreFrictions, 'choice_overload') || has(p.coreFrictions, 'activation_difficulty')) && !i.openEnded; }, lines: ['Already chosen. Just begin.', 'One thing to do, nothing to decide.', 'Start with the first minute.'] },
+    { cat: 'learn', when: function (p, i) { return has(p.coreFrictions, 'work_switch_off') && !i.productivityHeavy; }, lines: ['Learn something just for you, not for work.', 'Curiosity, not productivity.', 'Nothing here needs to be useful.'] },
+    { cat: 'connect', when: function (p, i) { return (has(p.coreFrictions, 'choice_overload') || has(p.coreFrictions, 'activation_difficulty')) && !i.booking && !i.openEnded; }, lines: ['The plan is already made. Just reach out.', 'No planning needed for this one.', 'Send the first message now. The rest follows.'] },
+    { cat: 'nourish', when: function (p, i) { return (has(p.coreFrictions, 'choice_overload') || has(p.coreFrictions, 'activation_difficulty')) && !i.chore; }, lines: ['Nothing to decide. Just this one thing.', 'Simple on purpose.', 'One easy thing, already chosen.'] }
+,
+    { cat: 'create', when: function (p, i) { return (has(p.coreFrictions, 'activation_difficulty') || has(p.overallGoals, 'confidence')) && !i.openEnded; }, lines: ['Start small. A rough first try still counts.', 'Just begin. It doesn’t have to be good yet.', 'The first minute is the hardest part.'] },
+    { cat: 'nourish', when: function (p, i) { return (has(p.coreFrictions, 'overthinking') || has(p.overallGoals, 'peace_presence')) && i.effortScore <= 1.5 && !i.chore; }, lines: ['Nothing to figure out here.', 'Just be here for a few minutes.', 'A quiet pocket in the middle of the day.'] }
+  ];
+
+  function cardLine(profile, idea, categoryId) {
+    if (idea.line) return idea.line;
+    if (idea.multiDay || idea.chore) return '';
+    for (var i = 0; i < LIBRARY_LINES.length; i++) {
+      var r = LIBRARY_LINES[i];
+      // Three wordings per rule, picked by the idea, so the same line doesn't follow someone every day.
+      if (r.cat === categoryId && r.when(profile, idea)) return r.lines[hashStr(idea.id || idea.text || '') % r.lines.length];
+    }
+    return '';
+  }
+
+  /* ---------- the Daily Flow header ----------
+     A small title that reflects the kind of day, from the person's own answers,
+     with the same one sentence summary the onboarding preview uses. */
+  var HEADER_BY_MODE = { E: 'A gentle flow today ✨', C: 'A calmer flow today ✨', N: 'A little something new today ✨', U: 'A screen free flow today ✨' };
+  function dayHeader(profile) {
+    var engine = global.PFDRecommendationEngine;
+    var modes = engine && engine.personModes ? engine.personModes(profile || {}) : {};
+    var best = null;
+    ['E', 'C', 'N', 'U'].forEach(function (m) { if (modes[m] && (!best || modes[m] > modes[best])) best = m; });
+    var subtitle = global.PFDOnboarding && global.PFDOnboarding.previewSubtitle && (profile.overallGoals || []).length
+      ? global.PFDOnboarding.previewSubtitle(profile) : 'Five personalized ideas for your day.';
+    return { title: HEADER_BY_MODE[best] || 'Your Daily Flow ✨', subtitle: subtitle };
+  }
+
   function reasonLine(profile, idea, categoryId) {
     var parts = [];
     if ((profile.coreFrictions || []).indexOf('phone_overuse') >= 0 && idea.offline) parts.push('less screen time');
     if ((profile.overallGoals || []).indexOf('less_screen_time') >= 0 && idea.offline) parts.push('less screen time');
     if ((profile.overallGoals || []).indexOf('more_creativity') >= 0 && categoryId === 'create') parts.push('more creativity');
     if ((profile.resetStyles || []).length && categoryId === 'nourish') parts.push('how you like to reset');
+    // Two rules can name the same thing ("less screen time" from a friction and a goal).
+    parts = parts.filter(function (x, i) { return parts.indexOf(x) === i; });
     if (parts.length) return 'Picked for ' + parts.slice(0, 2).join(' and ') + '.';
     return '';
   }
@@ -564,13 +719,20 @@
       }
       opts.familyName = pickRotatedName(profile.familyNames, opts.familyNamePick, 'someone in your family');
     }
+    if (family === 'starter_who' && (idea.connectTargetTags || [])[0] === 'friends' && typeof opts.friendNamePick !== 'number') {
+      opts.friendNamePick = friendNameRotate++;
+    }
     var seed = hashStr(idea.id + (profile.updatedAt || '') + family);
-    var tpl = pickVariant(family, seed);
-    if (isAndroidPlatform() && family === 'generic' && tpl.indexOf('{duration}') >= 0 && !ideaSuitsShortPrefix(idea)) {
+    var tpl = family === 'starter_who' ? idea.text.replace(/\{who\}/g, whoLabel(profile, idea, opts)) : pickVariant(family, seed);
+    /* A length only goes in front of an idea that is genuinely quick and does not
+       state its own length. One rule for both platforms: the iOS-only retry below
+       used to re-add a prefix this check had just removed. */
+    var prefixOk = ideaSuitsShortPrefix(idea);
+    if (family === 'generic' && tpl.indexOf('{duration}') >= 0 && !prefixOk) {
       tpl = '{text}';
     }
     var title = fillTemplate(tpl, profile, idea, seed, opts);
-    if (!isAndroidPlatform() && family === 'generic' && title.indexOf('{text}') < 0 && title === idea.text) {
+    if (family === 'generic' && prefixOk && title === idea.text) {
       title = fillTemplate(pickVariant('generic', seed + 1), profile, idea, seed + 1, opts);
     }
     var theme = global.PFDRecommendationEngine && global.PFDRecommendationEngine.recommendationThemeKey
@@ -583,6 +745,7 @@
       title: title,
       sourceText: idea.text,
       reason: reasonLine(profile, idea, cat),
+      line: cardLine(profile, idea, cat),
       effortScore: idea.effortScore || 2,
       tags: idea.goalTags || [],
       family: family,
@@ -592,6 +755,9 @@
 
   global.PFDRecommendationComposer = {
     compose: compose,
-    detectFamily: detectFamily
+    detectFamily: detectFamily,
+    cardLine: cardLine,
+    dayHeader: dayHeader,
+    projectInterestsFor: projectAffinities
   };
 })(window);

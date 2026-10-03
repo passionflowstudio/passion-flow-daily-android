@@ -69,7 +69,8 @@ public class ImageSharePlugin extends Plugin {
             if (bytes != null) {
                 File dir = new File(getContext().getCacheDir(), "share");
                 if (!dir.exists()) dir.mkdirs();
-                File file = new File(dir, call.getString("fileName", "passion-flow-day.png"));
+                // Only a plain file name, never a path.
+                File file = new File(dir, new File(call.getString("fileName", "passion-flow-day.png")).getName());
                 try (FileOutputStream out = new FileOutputStream(file)) { out.write(bytes); }
                 Uri uri = FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", file);
                 send.setType("image/png");

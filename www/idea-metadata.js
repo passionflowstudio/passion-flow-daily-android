@@ -164,20 +164,45 @@
     growth: 'personal_growth', adventure: 'fun_novelty', confidence: 'confidence'
   };
 
+  function minutesToTime(n) {
+    return n <= 15 ? '15m' : n <= 30 ? '30m' : n <= 60 ? '1h' : '2h+';
+  }
+
+  /* A length the idea states in its own words: "20 minutes", "an hour", "an
+     afternoon", "from scratch", "a class". Returns a raw time, or null. */
+  function statedTime(t) {
+    // "20 minutes", "a 45-minute session", "40 full minutes"
+    var m = t.match(/(\d+)[\s-]*(?:full\s+)?(?:minutes?|mins?)\b/);
+    if (m) return minutesToTime(+m[1]);
+    // "2 hours", "a 1-hour ride"
+    var h = t.match(/(\d+)[\s-]*(?:hours?|hrs?)\b/);
+    if (h) return +h[1] >= 2 ? '2h+' : '1h';
+    // "an hour", "one focused hour", "one full uninterrupted hour"
+    if (/\b(?:an?|one)\s+(?:[a-z]+\s+){0,2}hour\b/.test(t)) return '1h';
+    if (/\b(?:an?|one|the|full|whole|entire)\s+(?:single\s+)?(?:afternoon|evening|morning)\b|\bhalf.day\b/.test(t)) return '2h+';
+    if (/\bfrom scratch\b|\b(?:class|course|workshop|lesson)\b/.test(t)) return '1h';
+    return null;
+  }
+
   function ideaTime(text) {
     var t = text.toLowerCase();
     if (/\btrip\b|overnight|camping|weekend|full day|all day|day trip|road trip/.test(t)) return '2h+';
-    if (/full workout|45.minute|one full hour|full hour|pilates class|spin class/.test(t)) return '1h';
-    if (/voice memo|10 push.ups|15 min|quick|5 min/.test(t)) return '15m';
-    var h = 0;
-    for (var i = 0; i < text.length; i++) h = (h * 31 + text.charCodeAt(i)) & 0xffff;
-    return ['15m', '30m', '1h'][h % 3];
+    var stated = statedTime(t);
+    if (stated) return stated;
+    if (/full workout|one full hour|full hour|pilates class|spin class/.test(t)) return '1h';
+    if (/voice memo|10 push.ups|quick/.test(t)) return '15m';
+    /* No clue in the text: assume about half an hour. Nothing is called quick unless
+       its wording says so or idea-overrides.js was checked by hand, so 5 to 10 minute
+       days are built from ideas that really are that short. */
+    return '30m';
   }
 
   function mapTimeEstimate(raw) {
     if (raw === '15m') return 'micro';
     if (raw === '30m') return 'short';
-    if (raw === '1h' || raw === '2h+') return 'medium';
+    if (raw === '1h') return 'medium';
+    // Longer than anyone's "30-60 min" preference, so it must not share that bucket.
+    if (raw === '2h+') return 'long';
     return 'flexible';
   }
 
@@ -229,6 +254,57 @@
     (goalTags || []).forEach(function (g) {
       var v3 = V2_TO_V3_GOAL[g] || g;
       if (out.indexOf(v3) < 0) out.push(v3);
+    });
+    return out;
+  }
+
+  /* Automatic flags, one readable rule each. When a rule gets a particular idea
+     wrong, correct that idea in idea-overrides.js instead of bending the rule.
+
+       multiDay  spans several days, so it is never offered as today's idea
+       booking   needs a class, a booking, travel or planning ahead
+       chore     housework or a project: worth doing, but it adds work, so it is
+                 never used as the day's Reset
+       openEnded leaves the person to choose or design the activity ("find a
+                 project", "plan your..."), which is one more decision for someone
+                 who told us they overthink or have too many choices
+       assumes   needs equipment, a skill or a place that a broad preference does
+                 not tell us they have (a camera, a gym, a guitar, a beach). Shown
+                 only once the person has given us that detail */
+  var FLAG_RULES = {
+    /* Watching, scrolling or tapping on a screen. Never offline, and kept away from
+       people who told us their phone is the problem. */
+    screen: {
+      match: /\b(?:youtube|videos?|vlog|tiktok|instagram|netflix|tv|cinema|movie|documentar(?:y|ies)|watch (?:a |an |one |the )?(?:live )?(?:talk|lecture|interview|episode|show|series)|online|apps?|screens?|scroll(?:ing)?|social media)\b/,
+      unless: /\bno screens?\b|screen.free|phone (?:away|off|down)|without (?:a |your )?(?:phone|screen)|apps? you open purely/
+    },
+    multiDay: {
+      match: /\b(?:every (?:single )?(?:day|morning|night|week)|each day|per day|one per day|for (?:a|one) (?:full )?(?:week|month)|this (?:week|month|season)|for \d+ days|\d+ days|\d+.day|[a-z]+-a-day|weekly)\b/
+    },
+    booking: {
+      match: /\b(?:class|course|workshop|lesson|sign up|register|book a|tickets?|museum|concert|spa|restaurant|gym|escape room)\b/,
+      unless: /\b(?:online|youtube|at[\s-]home|video|app)\b/
+    },
+    chore: {
+      match: /\b(?:deep clean|clean (?:out|your|the|one)|declutter|organi[sz]e|capsule wardrobe|meal prep|from scratch|track (?:how|your|what))\b/
+    },
+    openEnded: {
+      match: /\b(?:find (?:a|an|one|something|your|new)|choose (?:a|an|one|your|something)|decide (?:on|what|which)|plan (?:a|an|your|out|the)|design (?:your|a|an)|map (?:out|your)|brainstorm|come up with|figure out|research|anything you|whatever you|any technique|start (?:a|an) (?:new )?(?:project|business|side hustle|blog|channel|podcast))\b/
+    },
+    assumes: {
+      match: /\b(?:camera|dslr|lens|tripod|gym|reformer|kettlebells?|barbells?|dumbbells?|trx|sandbag|weights|bike|cycling|surf(?:ing)?|kayak|paddle ?board|swim(?:ming)?|pool|beach|ocean|lake|river|waterfall|coast(?:al)?|body of water|mountains?|ski(?:ing)?|snowboard|piano|guitar|ukulele|drums?|violin|instrument|sewing machine|easel|pottery wheel|kiln|drive|car|road trip|tent|camping)\b/
+    }
+  };
+
+  var EFFORT_WORDS = { light: 1, moderate: 2, heavy: 3 };
+
+  function ideaFlags(text, override) {
+    var t = (text || '').toLowerCase();
+    var out = {};
+    Object.keys(FLAG_RULES).forEach(function (name) {
+      var rule = FLAG_RULES[name];
+      out[name] = rule.match.test(t) && !(rule.unless && rule.unless.test(t));
+      if (override && typeof override[name] === 'boolean') out[name] = override[name];
     });
     return out;
   }
@@ -383,8 +459,13 @@
     return categoryId + ':' + (packId || 'misc') + ':' + h.toString(36);
   }
 
-  function getIdeaMetadata(idea, categoryId, packId) {
+  /* `known` (optional): facts already known about an idea written for a purpose,
+     such as the starter ideas. Same fields as an idea-overrides.js entry
+     (time, effort, any flag, offline, novel). Takes the place of the override table. */
+  function getIdeaMetadata(idea, categoryId, packId, known) {
     var text = typeof idea === 'string' ? idea : (idea && idea.text) || '';
+    // A reworded idea keeps its original sentence as its key: same id, same corrections.
+    var key = (idea && typeof idea === 'object' && idea.originalText) || text;
     var packTag = typeof idea === 'object' && idea ? idea.tag : '';
     var goalTags = [];
     if (packTag && TAG_GOAL_MAP[packTag]) {
@@ -396,11 +477,17 @@
       if (goalTags.indexOf(g) < 0) goalTags.push(g);
     });
 
-    var rawTime = ideaTime(text);
+    var override = known || overrideFor(key, packId);
+    var rawTime = (override && override.time) || ideaTime(text);
     var vibe = ideaVibe(text);
-    var effort = effortScoreFrom(rawTime, text, vibe);
+    var effort = override && override.effort ? EFFORT_WORDS[override.effort] : effortScoreFrom(rawTime, text, vibe);
+    var flags = ideaFlags(text, override);
+    // Something you have to book or travel to is never a light lift, however short.
+    if (flags.booking && !(override && override.effort)) effort = Math.max(effort, 2.8);
     var novelty = noveltyLevelFrom(text, packTag);
-    var offline = isOffline(text);
+    var offline = isOffline(text) && !flags.screen;
+    if (override && typeof override.offline === 'boolean') offline = override.offline;
+    if (override && override.novel === true) novelty = Math.max(novelty, 2);
     var prodHeavy = isProductivityHeavy(text, packTag);
 
     var heur = tagsFromTextHeuristics(text, categoryId);
@@ -415,10 +502,11 @@
     var resetStyleTags = mergeTags(mergeTags(PACK_RESET[packTag] || [], PACK_ID_NOURISH[packId] || []), heur.resetStyleTags);
 
     var meta = {
-      id: stableIdeaId(categoryId, packId, text),
+      id: stableIdeaId(categoryId, packId, key),
       categoryId: categoryId,
       packId: packId || null,
       text: text,
+      originalText: key !== text ? key : undefined,
       tag: packTag || null,
       goalTags: goalTags,
       overallGoalTags: toOverallGoalTags(goalTags),
@@ -432,6 +520,12 @@
       noveltyLevel: novelty,
       offline: offline,
       productivityHeavy: prodHeavy,
+      multiDay: flags.multiDay,
+      booking: flags.booking,
+      chore: flags.chore,
+      openEnded: flags.openEnded,
+      assumes: flags.assumes,
+      screen: flags.screen,
       createInterestTags: createInterestTags,
       createSubtypeTags: createSubtypeTags,
       mindsetNeedTags: mindsetNeedTags,
@@ -446,9 +540,156 @@
     return meta;
   }
 
+  /* The correction for one pack idea. "packId::sentence" applies to that pack only, for
+     the few sentences that sit in two packs where only one copy changes. */
+  function overrideFor(original, packId) {
+    var table = global.PFDIdeaOverrides;
+    if (!table) return null;
+    return (packId && table[packId + '::' + original]) || table[original] || null;
+  }
+
+  /* How a pack idea reads on screen: its new wording from idea-overrides.js if it has
+     one, otherwise the original sentence finished with a period, like every other card. */
+  function displayText(original, packId) {
+    var fix = overrideFor(original, packId);
+    if (fix && typeof fix.text === 'string') return fix.text;
+    var t = (original || '').replace(/\s+$/, '');
+    return /[.!?…]$/.test(t) ? t : t + '.';
+  }
+
+  /* ---------- the emoji shown next to an idea ----------
+     Checked in order: the first theme an idea's wording matches wins. When nothing
+     matches, the idea gets one of a few emojis for its area, picked from its wording
+     so it never changes, instead of the same sparkle on every row. */
+  var EMOJI_THEMES = [
+    ['🎤', /\b(?:karaoke|open mic|stand.?up|comedy|improv|speech)\b/],
+    ['🎧', /\b(?:podcast|audiobook|episode)\b/],
+    ['🎸', /\b(?:guitar|ukulele|piano|instrument|violin|drums?)\b/],
+    ['💃', /\b(?:danc\w*|salsa|bachata|ballet|choreo\w*|zumba|line dancing)\b/],
+    ['🎵', /\b(?:music|songs?|playlist|album|sing\w*|melody|lyric\w*|djing|dj|beat|hum)\b/],
+    ['📸', /\b(?:photo\w*|camera|portrait|shoot)\b/],
+    ['🎬', /\b(?:film|movie|documentar\w*|docuseries|video|cinema|time.?lapse|tiktok)\b/],
+    ['🧵', /\b(?:craft\w*|knit\w*|crochet|embroider\w*|sew\w*|origami|weav\w*|pottery|clay|lino|wheel throwing|calligraphy|lettering|bracelets?)\b/],
+    ['🎨', /\b(?:paint\w*|art|artist|draw\w*|sketch\w*|illustrat\w*|canvas|watercolors?|doodle|collage|zine|moodboard|scrapbook|vision board)\b/],
+    ['💡', /\b(?:business|product\w*|brand|launch|website|pitch|newsletter|etsy|course|portfolio|prototype|notion|content calendar|infographic|landing page|mockup|logo)\b/],
+    ['🛁', /\b(?:bath|bathhouse|shower|spa|epsom)\b/],
+    ['🧴', /\b(?:skincare|face mask|hair mask|manicure|hand cream|gua sha|lotion|moisturi\w*|exfoliate|beauty)\b/],
+    ['💆', /\b(?:massage|compress|lymphatic)\b/],
+    ['💧', /\b(?:water|hydrate)\b(?!fall)/],
+    ['☕', /\b(?:coffee|cafe|tea|matcha|chai|latte|drink)\b/],
+    ['🧁', /\b(?:bak\w*|cake|cookies?|tart|croissants?|brioche|bread|sourdough)\b/],
+    ['🍳', /\b(?:cook\w*|recipe|meal|kitchen|dish|dinner|lunch|breakfast|brunch|pasta|sushi|soup|pizza|snack|smoothie|oats|granola|dumplings|noodles|charcuterie|grain bowl|protein|vegetables?|juic\w*|ferment\w*|nut butter|chef)\b/],
+    ['🥾', /\b(?:hike|hiking|trail|climb\w*|hill|viewpoint|lookout|mountains?|summit|bouldering|foraging)\b/],
+    ['🚴', /\b(?:bike|biking|cycl\w*|ride|spin class)\b/],
+    ['🏊', /\b(?:swim\w*|pool|float|snorkel\w*|dip)\b/],
+    ['🛶', /\b(?:kayak\w*|paddle\w*|canoe|boat|tubing|rapids)\b/],
+    ['🌊', /\b(?:ocean|sea|beach|lake|river|waterfall|tide|stream|pond)\b/],
+    ['🔥', /\b(?:fire|campfire)\b/],
+    ['⭐', /\b(?:stars?|stargaz\w*)\b/],
+    ['🌅', /\b(?:sunrise|sunset|golden hour)\b/],
+    ['🌸', /\b(?:flowers?|wildflowers|bloom)\b/],
+    ['🌱', /\b(?:plant\w*|seeds?|herb|grow)\b/],
+    ['🏋️', /\b(?:workout|strength|squats?|planks?|push.?ups?|pull.?ups?|lift\w*|dumbbells?|kettlebells?|weights|reps|pilates|barre|circuit|hiit|tabata|gym|crossfit|resistance bands?|core|hip thrusts|lunges)\b/],
+    ['🏃', /\b(?:run\w*|jog\w*|sprint\w*|5k|race|cardio|intervals?|track|treadmill|stairs?)\b/],
+    ['🧘', /\b(?:yoga|meditat\w*|breath\w*|stretch\w*|mindful\w*|stillness|silence|body scan|tai chi|qi gong|nidra|grounding|loving.?kindness)\b/],
+    ['🚶', /\b(?:walk\w*|stroll|steps|wander\w*)\b/],
+    ['⚽', /\b(?:soccer|basketball|volleyball|tennis|pickleball|badminton|frisbee|sports?|league|batting|golf|capture the flag|tag)\b/],
+    ['🛼', /\b(?:skate\w*|rollerskate|skateboard|trampoline|axe throwing|laser tag|go.?kart\w*)\b/],
+    ['🎲', /\b(?:games?|board game|card game|puzzle|lego|bowling|mini golf|escape room|magic trick)\b/],
+    ['📵', /\b(?:phones?|screens?|notifications?|social media|apps?|offline|digital|inbox|email|wi.?fi|scroll\w*|instagram|news)\b/],
+    ['💬', /\b(?:conversation|chat|catch up|call)\b/],
+    ['🎧', /\b(?:listen\w*)\b/],
+    ['📚', /\b(?:read\w*|books?|chapter|pages?|library|bookstore|novel|biography|classic|article|essay|wikipedia)\b/],
+    ['✍️', /\b(?:writ\w*|journal\w*|letter|poem|list|manifesto|headline|story|morning pages)\b/],
+    ['🧠', /\b(?:learn\w*|study|research|explainer|science\w*|scientific|history|historical|philosophy|psychology|economics|language|words|talk|lecture|masterclass|tutorial|ted)\b/],
+    ['💌', /\b(?:thank\w*|appreciat\w*|grateful|gratitude|compliment\w*|voice note|kind\w*)\b/],
+    ['🤝', /\b(?:volunteer\w*|donat\w*|community|neighbou?rs?|strangers?|help\w*|local cause|book swap)\b/],
+    ['💞', /\b(?:partner|date|couple|romantic|each other)\b/],
+    ['👨‍👩‍👧', /\b(?:family|grandparents?|parents?|relative)\b/],
+    ['👯', /\b(?:friends?|bestie|sleepover)\b/],
+    ['🛍️', /\b(?:thrift\w*|shop\w*|flea market|farmers market|market|store|buy)\b/],
+    ['🌟', /\b(?:dream\w*|vision|future|someday|five year|5 year)\b/],
+    ['🗺️', /\b(?:trip|travel\w*|explore|map|neighborhood|town|city|bus|train|drive|road|museum|gallery|botanical|national|park)\b/],
+    ['🧹', /\b(?:clean\w*|declutter\w*|organi[sz]\w*|tidy|drawer|wardrobe|closet|fridge|pantry|unsubscribe|light bulb)\b/],
+    ['🕯️', /\b(?:candles?|cozy|hygge|lamp|lighting|string lights)\b/],
+    ['🛏️', /\b(?:bed\w*|nap|sleep\w*|rest|lie down|lay)\b/],
+    ['🏡', /\b(?:home|room|space|corner|entryway|furniture|shelf|desk|nook|wall|keys|chargers)\b/],
+    ['🪞', /\b(?:outfit|style|fashion|makeup|hair|dress up|wear)\b/],
+    ['🎯', /\b(?:challenge|goals?|habit|track\w*|commit\w*|record|accountability)\b/],
+    ['💭', /\b(?:reflect\w*|feeling|thoughts?|fears?|beliefs?|values|questions?|honest\w*|proud|mindset|regret\w*|lessons?)\b/],
+    ['🌳', /\b(?:tree|forest|grass|garden|nature|green|outdoors?|outside|fresh air|sun)\b/],
+    ['🌙', /\b(?:night|evening|bedtime|dark)\b/]
+  ];
+  var AREA_EMOJI = {
+    create: ['🎨', '🧵', '💡', '✏️'],
+    learn: ['🧠', '💭', '📖', '🔍'],
+    connect: ['💞', '🤝', '💬', '🫶'],
+    move: ['🤸', '⚡', '🏃', '🌿'],
+    nourish: ['🌿', '🕯️', '🍵', '☁️']
+  };
+
+  function ideaEmoji(text, categoryId) {
+    var t = (text || '').toLowerCase();
+    for (var i = 0; i < EMOJI_THEMES.length; i++) {
+      if (EMOJI_THEMES[i][1].test(t)) return EMOJI_THEMES[i][0];
+    }
+    var set = AREA_EMOJI[categoryId] || ['🌟', '🎈', '🌈', '🍀'];
+    var h = 0;
+    for (var j = 0; j < t.length; j++) h = (h * 31 + t.charCodeAt(j)) & 0xffff;
+    return set[h % set.length];
+  }
+
+  // Original sentence -> what people now see, for every pack idea that changed.
+  var REWORDED = {};
+
+  /* Rewords pack ideas in place, so every screen (browse lists included) shows the same
+     wording. The original sentence is kept as `originalText`: it stays the key for ids,
+     corrections and history. Safe to call more than once. */
+  function applyRewrites(focusPacks) {
+    if (!focusPacks) return focusPacks;
+    Object.keys(focusPacks).forEach(function (categoryId) {
+      (focusPacks[categoryId] || []).forEach(function (pack) {
+        (pack.ideas || []).forEach(function (idea) {
+          if (!idea || idea.originalText || typeof idea.text !== 'string') return;
+          var shown = displayText(idea.text, pack.id);
+          if (shown === idea.text) return;
+          /* A replacement is a different idea, so saved and finished copies of the old
+             one stay as they were. Only new wording follows into those lists. */
+          var fix = overrideFor(idea.text, pack.id);
+          if (!(fix && fix.replaces)) REWORDED[idea.text] = shown;
+          idea.originalText = idea.text;
+          idea.text = shown;
+        });
+      });
+    });
+    return focusPacks;
+  }
+
+  /* Saved, added, done and deleted ideas are stored as sentences, by area. When the
+     app loads them, any old wording becomes the new wording, so a saved idea still
+     shows as saved and a deleted one stays deleted. The person's own custom ideas are
+     never in the table, so they are never touched. */
+  function updateRewordedIdeas(byArea) {
+    if (!byArea || typeof byArea !== 'object' || Array.isArray(byArea)) return byArea;
+    var out = {};
+    Object.keys(byArea).forEach(function (area) {
+      var list = byArea[area];
+      if (!Array.isArray(list)) { out[area] = list; return; }
+      var seen = {};
+      out[area] = [];
+      list.forEach(function (s) {
+        var v = typeof s === 'string' && REWORDED[s] ? REWORDED[s] : s;
+        if (typeof v === 'string') { if (seen[v]) return; seen[v] = true; }
+        out[area].push(v);
+      });
+    });
+    return out;
+  }
+
   function buildIdeaIndex(focusPacks) {
     var index = [];
     if (!focusPacks) return index;
+    applyRewrites(focusPacks);
     Object.keys(focusPacks).forEach(function (categoryId) {
       (focusPacks[categoryId] || []).forEach(function (pack) {
         (pack.ideas || []).forEach(function (idea) {
@@ -456,12 +697,27 @@
         });
       });
     });
+    if (global.PFDCreateStyleIdeas) {
+      index = index.concat(global.PFDCreateStyleIdeas.buildIndex({ getIdeaMetadata: getIdeaMetadata }));
+    }
+    // Starter ideas are ordinary library ideas, written to need nothing beyond a
+    // broad preference. The engine ranks them up while a profile is still broad.
+    if (global.PFDStarterIdeas) {
+      index = index.concat(global.PFDStarterIdeas.buildIndex({ getIdeaMetadata: getIdeaMetadata, mapTimeEstimate: mapTimeEstimate }));
+    }
     return index;
   }
 
   global.PFDIdeaMetadata = {
     TAG_GOAL_MAP: TAG_GOAL_MAP,
     getIdeaMetadata: getIdeaMetadata,
+    applyRewrites: applyRewrites,
+    displayText: displayText,
+    ideaEmoji: ideaEmoji,
+    overrideFor: overrideFor,
+    updateRewordedIdeas: updateRewordedIdeas,
+    FLAG_RULES: FLAG_RULES,
+    EFFORT_WORDS: EFFORT_WORDS,
     buildIdeaIndex: buildIdeaIndex,
     mapTimeEstimate: mapTimeEstimate
   };

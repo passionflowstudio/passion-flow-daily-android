@@ -64,6 +64,8 @@ public class GoogleAuthPlugin extends Plugin {
 
                 @Override
                 public void onError(GetCredentialException e) {
+                    Log.w(TAG, "Google credential request failed: " + e.getClass().getName()
+                        + " type=" + e.getType() + " msg=" + e.getMessage(), e);
                     if (e instanceof GetCredentialCancellationException) {
                         call.reject("CANCELED", "CANCELED");
                     } else {

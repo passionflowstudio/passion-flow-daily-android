@@ -50,6 +50,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "307906430534-6n28cticcv1bkvud3mbgfsop7ijpeeg2.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.passionflowdaily.app",
+            "certificate_hash": "92e77cf37c3c92a42bf1e6c1e3610ea9fb51af5c"
+          }
+        },
+        {
           "client_id": "307906430534-ljdgb3kjh9i8bn0d77bvah8o8lfc2rlo.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
@@ -58,11 +66,35 @@
           }
         },
         {
+          "client_id": "307906430534-me1vunfgnld4kao49h5m2q08r78cd0sp.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.passionflowdaily.app",
+            "certificate_hash": "335ec22706d733499484d8e670cb33882763e6cd"
+          }
+        },
+        {
+          "client_id": "307906430534-mru1k8df7tafi9m4q6s2589293m9jqhi.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.passionflowdaily.app",
+            "certificate_hash": "769f09a7f49af12bed768eaa8e0e1815d9a01859"
+          }
+        },
+        {
           "client_id": "307906430534-rqsnbti548dcb30refjamfmmrrnfn0fk.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
             "package_name": "com.passionflowdaily.app",
             "certificate_hash": "46a4e6226434132fbbd32ba9fee39408a9942df7"
+          }
+        },
+        {
+          "client_id": "307906430534-v5d1rg5374kt3bvosc0v0rqikrvndnnn.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.passionflowdaily.app",
+            "certificate_hash": "d3e8a3aefc5c8472f14bb2d5e2821cc01bcd0e87"
           }
         },
         {
