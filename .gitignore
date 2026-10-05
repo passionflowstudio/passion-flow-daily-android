@@ -43,3 +43,6 @@ ios/**/*.xcuserstate
 # Editor
 .vscode/
 *.swp
+
+# Built by scripts/build-web.js (npx cap copy runs it)
+www-dist/
